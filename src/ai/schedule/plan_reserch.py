@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
-from schedule.prompt import SCHDULE_AI_SYSTEM_PROMPT
+from .prompt import SCHDULE_AI_SYSTEM_PROMPT
 
 """研究計画作成用のモジュール。
 

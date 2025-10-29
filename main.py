@@ -1,12 +1,20 @@
 from langchain_core.runnables import RunnableConfig
-from langgraph.types import interrupt
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import interrupt
 from pydantic import BaseModel, Field
+
+from src.ai.analyze.query_analyze import ResearchParameters
+from src.ai.reflect.reflect_search_result import ReflectionResultSchema
+from src.ai.schedule.plan_reserch import GeneratedObjectSchema
 
 
 class State(BaseModel):
     value: str = Field()
-    research_plan_human_edit: bool = Field()
+    research_paramerters: ResearchParameters = Field()
+    research_plan: GeneratedObjectSchema = Field()
+    analisys: ReflectionResultSchema = Field()
+    report: str = Field()
+    research_plan_human_edit: bool | None = Field(default=None)
 
 
 class InputState(BaseModel):
@@ -92,7 +100,6 @@ def main():
     graph_image = graph.get_graph().draw_mermaid_png()
     with open("./graph.png", "wb") as file:
         file.write(graph_image)
-    # graph.invoke({"messages": [{"role": "user", "content": "hi!"}]})
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
-from analyze.prompt import QUERY_ANALYZE_AI_SYSTEM_PROMPT
+from .prompt import QUERY_ANALYZE_AI_SYSTEM_PROMPT
 
 
 class ResearchParameters(BaseModel):
