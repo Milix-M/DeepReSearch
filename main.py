@@ -16,6 +16,7 @@ class InputState(BaseModel):
 class OutputState(BaseModel):
     graph_output: str = Field()
 
+
 def _research_plan_human_judge(state: State, config: RunnableConfig):
     print("調査計画:")
 
@@ -29,6 +30,7 @@ def _research_plan_human_judge(state: State, config: RunnableConfig):
             break
 
     return state
+
 
 def node_generate_research_parameters(state: InputState, config: RunnableConfig):
     return
@@ -49,14 +51,17 @@ def node_analyze_research_result_and_reflect(state: State, config: RunnableConfi
 def node_make_report(state: OutputState, config: RunnableConfig):
     return
 
+
 def routing_human_edit_judge(state: State):
     if state.research_plan_human_edit:
         return "edit"
     else:
         return "search"
 
+
 def node_edit_research_plan(state: State):
     return
+
 
 def main():
     graph = StateGraph(State, input_schema=InputState, output_schema=OutputState)
@@ -71,14 +76,13 @@ def main():
     graph.add_edge("node_generate_research_parameters", "node_make_research_plan")
     graph.add_edge("node_make_research_plan", "_research_plan_human_judge")
     graph.add_conditional_edges(
-            "_research_plan_human_judge",
-            routing_human_edit_judge,
-            {
-                "edit": "node_edit_research_plan",
-                "search": "node_web_search",
-            }
-        )
-    graph.add_edge("node_edit_research_plan", "node_web_search")
+        "_research_plan_human_judge",
+        routing_human_edit_judge,
+        {
+            "edit": "node_edit_research_plan",
+            "search": "node_web_search",
+        },
+    )
     graph.add_edge("node_edit_research_plan", "node_web_search")
     graph.add_edge("node_web_search", "node_analyze_research_result_and_reflect")
     graph.add_edge("node_analyze_research_result_and_reflect", "node_make_report")
