@@ -117,7 +117,7 @@ def routing_human_edit_judge(state: State):
     Returns:
         str: 'edit'（編集）または 'search'（検索）
     """
-    if state.research_plan_human_edit:
+    if state.research_plan_human_edit == "y":
         return "edit"
     else:
         return "search"
@@ -165,29 +165,29 @@ async def main():
         file.write(graph_image)
 
     config = {"configurable": {"thread_id": "1"}}
-    inputs = {"user_input": "東條英機について調査"}
+    inputs = {"user_input": "AIの進化について調査"}
 
     # Graph実行
-    async for msg, metadata in compiled_graph.astream(
+    async for msg in compiled_graph.astream(
         inputs,
         config=config,
-        stream_mode="messages",
+        stream_mode="updates",
         debug=True,
     ):
-        if msg.content:
-            print(msg.content, end="|", flush=True)
+        if msg:
+            print(msg)
 
     print("interrupt中")
 
     # Graph再実行
-    async for msg, metadata in compiled_graph.astream(
+    async for msg in compiled_graph.astream(
         Command(resume="y"),
         config=config,
-        stream_mode="messages",
+        stream_mode="updates",
         debug=True,
     ):
-        if msg.content:
-            print(msg.content, end="|", flush=True)
+        if msg:
+            print(msg)
 
 
 if __name__ == "__main__":
