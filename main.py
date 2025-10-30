@@ -5,7 +5,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import interrupt
+from langgraph.types import Command, interrupt
 from pydantic import BaseModel, Field
 
 from src.ai.analyze.query_analyze import QueryAnalyzeAI, ResearchParameters
@@ -39,7 +39,7 @@ class State(BaseModel):
     research_plan_human_edit: bool | None = Field(default=None)
 
 
-def _research_plan_human_judge(state: State, config: RunnableConfig):
+async def _research_plan_human_judge(state: State, config: RunnableConfig):
     """研究計画を人間が編集するかどうか判定するノード
 
     ユーザーに対して「編集しますか？ y or n: 」と尋ね、
@@ -129,6 +129,8 @@ def node_edit_research_plan(state: State):
 
 async def main():
     graph = StateGraph(State)
+
+    # Node追加
     graph.add_node(node_generate_research_parameters)
     graph.add_node(node_make_research_plan)
     graph.add_node(_research_plan_human_judge)
@@ -136,6 +138,8 @@ async def main():
     graph.add_node(node_web_search)
     graph.add_node(node_analyze_research_result_and_reflect)
     graph.add_node(node_make_report)
+
+    # Edge追加
     graph.add_edge(START, "node_generate_research_parameters")
     graph.add_edge("node_generate_research_parameters", "node_make_research_plan")
     graph.add_edge("node_make_research_plan", "_research_plan_human_judge")
@@ -162,10 +166,22 @@ async def main():
 
     config = {"configurable": {"thread_id": "1"}}
     inputs = {"user_input": "東條英機について調査"}
-    # compiled_graph.stream(inputs, config=config, stream_mode="values", debug=True)
 
+    # Graph実行
     async for msg, metadata in compiled_graph.astream(
         inputs,
+        config=config,
+        stream_mode="messages",
+        debug=True,
+    ):
+        if msg.content:
+            print(msg.content, end="|", flush=True)
+
+    print("interrupt中")
+
+    # Graph再実行
+    async for msg, metadata in compiled_graph.astream(
+        Command(resume="y"),
         config=config,
         stream_mode="messages",
         debug=True,
