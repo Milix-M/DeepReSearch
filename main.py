@@ -117,7 +117,7 @@ def routing_human_edit_judge(state: State):
     Returns:
         str: 'edit'（編集）または 'search'（検索）
     """
-    if state.research_plan_human_edit == "y":
+    if state.research_plan_human_edit:
         return "edit"
     else:
         return "search"
