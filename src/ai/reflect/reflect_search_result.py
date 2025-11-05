@@ -40,7 +40,7 @@ class SearchResultAnalyzeAndReflectAI:
         self.llm = llm
         self.structured_llm = llm.with_structured_output(ReflectionResultSchema)
 
-    def __call__(self, query, result, iteration, total_iterations):
+    def __call__(self, query, result) -> ReflectionResultSchema:
         prompt = [
             (
                 "system",
@@ -51,12 +51,4 @@ class SearchResultAnalyzeAndReflectAI:
         ]
         response = self.structured_llm.invoke(prompt)
 
-        result = {
-            "key_insights": response.key_insights,
-            "information_gaps": response.information_gaps,
-            "contradictions": response.contradictions,
-            "improved_queries": response.improved_queries,
-            "summary": response.summary,
-            "current_iteration": iteration,
-            "total_iterations": total_iterations,
-        }
+        return response
