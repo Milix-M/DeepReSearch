@@ -33,7 +33,7 @@ class ResearchParameters(Serializable):
 
     @classmethod
     def get_lc_namespace(cls) -> list[str]:
-        return ["DeepReSearch", "ai", "analyze"]
+        return ["src", "ai", "analyze"]
 
 
 class QueryAnalyzeAI:
