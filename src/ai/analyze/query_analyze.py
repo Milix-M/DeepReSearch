@@ -7,19 +7,19 @@ class ResearchParameters(BaseModel):
     """クエリに対する研究実行パラメータを表す構造化モデル。
 
     Attributes:
-        searchQueriesPerSection (int): 各セクションで生成する検索クエリの数。
+        search_queries_per_section (int): 各セクションで生成する検索クエリの数。
             値の範囲は 1〜5。
-        searchIterations (int): 各クエリに対して実行する検索反復の回数。
+        search_iterations (int): 各クエリに対して実行する検索反復の回数。
             値の範囲は 1〜5。
         reasoning (str): モデルがこれらのパラメータを選択した理由の説明。
     """
 
-    searchQueriesPerSection: int = Field(
+    search_queries_per_section: int = Field(
         ge=1,
         le=5,
         description="各セクションで実行する検索クエリの数",
     )
-    searchIterations: int = Field(
+    search_iterations: int = Field(
         ge=1,
         le=5,
         description="各クエリに対して実行する検索反復の回数",
