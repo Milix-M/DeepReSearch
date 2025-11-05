@@ -1,24 +1,41 @@
-from pydantic import BaseModel, Field
+from langchain_core.load.serializable import Serializable
+from pydantic import Field
 
 from .prompt import SEARCH_RESULT_ANALYZE_AND_REFLECTION_SYSTEM_PROMPT
 
 
-class KeyInsight(BaseModel):
+class KeyInsight(Serializable):
     """検索結果から得られた単一の重要な洞察を定義します。"""
 
     insight: str = Field(description="検索結果から得られた重要な洞察")
     confidence: int = Field(ge=1, le=10, description="この洞察の信頼度（1-10）")
     source_indication: str = Field(description="この洞察の出所に関する手がかり")
 
+    @classmethod
+    def is_lc_serializable(cls) -> bool:
+        return True
 
-class ImprovedQuery(BaseModel):
+    @classmethod
+    def get_lc_namespace(cls) -> list[str]:
+        return ["DeepReSearch", "ai", "reflect"]
+
+
+class ImprovedQuery(Serializable):
     """改善提案された単一の検索クエリを定義します。"""
 
     query: str = Field(description="改善された検索クエリ")
     rationale: str = Field(description="このクエリを提案する理由")
 
+    @classmethod
+    def is_lc_serializable(cls) -> bool:
+        return True
 
-class ReflectionResultSchema(BaseModel):
+    @classmethod
+    def get_lc_namespace(cls) -> list[str]:
+        return ["DeepReSearch", "ai", "reflect"]
+
+
+class ReflectionResultSchema(Serializable):
     """
     検索結果の振り返り（Reflection）によって生成される
     オブジェクト全体のスキーマを定義します。
@@ -33,6 +50,14 @@ class ReflectionResultSchema(BaseModel):
     )
     improved_queries: list[ImprovedQuery]
     summary: str = Field(description="振り返りの要約と次のステップへの推奨事項")
+
+    @classmethod
+    def is_lc_serializable(cls) -> bool:
+        return True
+
+    @classmethod
+    def get_lc_namespace(cls) -> list[str]:
+        return ["DeepReSearch", "ai", "reflect"]
 
 
 class SearchResultAnalyzeAndReflectAI:
