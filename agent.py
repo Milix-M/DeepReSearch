@@ -16,7 +16,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from langgraph.types import interrupt
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.ai.analyze.query_analyze import QueryAnalyzeAI, ResearchParameters
 from src.ai.reflect.reflect_search_result import ReflectionResultSchema
@@ -89,6 +89,39 @@ class State(BaseModel):
     messages: Annotated[list, add_messages] = Field(default=[])
     # 最終結果
     report: str | None = Field(default=None)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _ensure_model_instances(cls, values: dict) -> dict:
+        """チェックポイント復元時に古いインスタンスを現在のモデルへ再検証する。"""
+
+        research_params = values.get("research_parameters")
+        if research_params is not None and not isinstance(
+            research_params, ResearchParameters
+        ):
+            if hasattr(research_params, "model_dump"):
+                values["research_parameters"] = ResearchParameters.model_validate(
+                    research_params.model_dump()
+                )
+            elif isinstance(research_params, dict):
+                values["research_parameters"] = ResearchParameters.model_validate(
+                    research_params
+                )
+
+        research_plan = values.get("research_plan")
+        if research_plan is not None and not isinstance(
+            research_plan, GeneratedObjectSchema
+        ):
+            if hasattr(research_plan, "model_dump"):
+                values["research_plan"] = GeneratedObjectSchema.model_validate(
+                    research_plan.model_dump()
+                )
+            elif isinstance(research_plan, dict):
+                values["research_plan"] = GeneratedObjectSchema.model_validate(
+                    research_plan
+                )
+
+        return values
 
 
 class OSSDeepResearchAgent:
@@ -165,8 +198,26 @@ class OSSDeepResearchAgent:
         return state
 
     def _node_edit_research_plan(self, state: State):
-        """研究計画の編集ノードのプレースホルダ。"""
-        return
+        """ユーザー編集後の研究計画を検証・正規化する。
+
+        Args:
+            state (State): ユーザー編集済みのステート。
+
+        Returns:
+            dict[str, GeneratedObjectSchema]: 検証済み研究計画を含む差分ステート。
+        """
+        plan = state.research_plan
+        if plan is None:
+            return {}
+
+        if isinstance(plan, GeneratedObjectSchema):
+            validated_plan = plan
+        elif hasattr(plan, "model_dump"):
+            validated_plan = GeneratedObjectSchema.model_validate(plan.model_dump())
+        else:
+            validated_plan = GeneratedObjectSchema.model_validate(plan)
+
+        return {"research_plan": validated_plan}
 
     async def _node_deep_research(self, state: State, config: RunnableConfig):
         """ReAct ループを用いた深堀り検索を実行する。
