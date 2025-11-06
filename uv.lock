@@ -258,6 +258,7 @@ dependencies = [
     { name = "nest-asyncio" },
     { name = "streamlit" },
     { name = "uvicorn", extra = ["standard"] },
+    { name = "websockets" },
 ]
 
 [package.metadata]
@@ -271,6 +272,7 @@ requires-dist = [
     { name = "nest-asyncio", specifier = ">=1.6.0" },
     { name = "streamlit", specifier = ">=1.51.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.38.0" },
+    { name = "websockets", specifier = ">=15.0.1" },
 ]
 
 [[package]]
