@@ -4,7 +4,9 @@ from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
-from src.ai.reflect.reflect_search_result import SearchResultAnalyzeAndReflectAI
+from src.backend.ai.reflect.reflect_search_result import (
+    SearchResultAnalyzeAndReflectAI,
+)
 
 
 class ReflectInput(BaseModel):
@@ -37,8 +39,8 @@ def reflect_on_results(query, results, iteration, total_iterations) -> dict:
     """
     llm = ChatOpenAI(
         model="tngtech/deepseek-r1t2-chimera:free",
-        openai_api_key=getenv("OPENROUTER_API_KEY"),
-        openai_api_base="https://openrouter.ai/api/v1",
+        openai_api_key=getenv("OPENROUTER_API_KEY"),  # type: ignore[call-arg]
+        openai_api_base="https://openrouter.ai/api/v1",  # type: ignore[call-arg]
     )
     ai = SearchResultAnalyzeAndReflectAI(llm)
     response = ai(query, results)
