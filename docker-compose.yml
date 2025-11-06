@@ -1,0 +1,23 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+  frontend:
+    build:
+      context: ./src/frontend
+      dockerfile: ../../docker/frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://backend:8000
+        NEXT_PUBLIC_WS_URL: ws://backend:8000/ws/research
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://backend:8000
+      NEXT_PUBLIC_WS_URL: ws://backend:8000/ws/research
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
