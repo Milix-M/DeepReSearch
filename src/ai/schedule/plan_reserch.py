@@ -1,7 +1,3 @@
-from os import getenv
-
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 from .prompt import SCHDULE_AI_SYSTEM_PROMPT
@@ -96,7 +92,7 @@ class PlanResearchAI:
         self.llm = llm
         self.structured_llm = llm.with_structured_output(GeneratedObjectSchema)
 
-    def __call__(self, query):
+    async def __call__(self, query):
         """LLM を呼び出して研究計画を生成する。
 
         Args:
@@ -111,17 +107,5 @@ class PlanResearchAI:
         """
 
         prompt = [("system", SCHDULE_AI_SYSTEM_PROMPT.format(query=query))]
-        response = self.structured_llm.invoke(prompt)
+        response = await self.structured_llm.ainvoke(prompt)
         return response
-
-
-if __name__ == "__main__":
-    load_dotenv(verbose=True)
-    ai = PlanResearchAI(
-        ChatOpenAI(
-            model="z-ai/glm-4.5-air:free",
-            openai_api_key=getenv("OPENROUTER_API_KEY"),
-            openai_api_base="https://openrouter.ai/api/v1",
-        )
-    )
-    print(ai("Googleとは？"))
