@@ -12,8 +12,25 @@ from src.ai.analyze.query_analyze import QueryAnalyzeAI, ResearchParameters
 from src.ai.reflect.reflect_search_result import ReflectionResultSchema
 from src.ai.schedule.plan_reserch import GeneratedObjectSchema, PlanResearchAI
 
+llm = ChatOpenAI(
+    model="z-ai/glm-4.5-air:free",
+    openai_api_key=getenv("OPENROUTER_API_KEY"),
+    openai_api_base="https://openrouter.ai/api/v1",
+)
+
 
 class State(BaseModel):
+    """ワークフローで共有されるState
+
+    Attributes:
+        user_input (str | None): ユーザーが入力したクエリ文字列
+        research_parameters (ResearchParameters | None): クエリ解析により生成された研究パラメータ
+        research_plan (GeneratedObjectSchema | None): 研究計画
+        analysys (ReflectionResultSchema | None): 検索結果の解析・反映結果
+        report (str | None): 最終的なリポート本文
+        research_plan_human_edit (bool | None): 研究計画を人間が編集するかどうかのフラグ
+    """
+
     user_input: str | None = Field()
     research_parameters: ResearchParameters | None = Field(default=None)
     research_plan: GeneratedObjectSchema | None = Field(default=None)
@@ -23,6 +40,16 @@ class State(BaseModel):
 
 
 def _research_plan_human_judge(state: State, config: RunnableConfig):
+    """研究計画を人間が編集するかどうか判定するノード
+
+    ユーザーに対して「編集しますか？ y or n: 」と尋ね、
+    `state.research_plan_human_edit` を True/False に設定して返す。
+
+    Args:
+        state (State): 現在のワークフロー状態。`research_plan_human_edit` が更新される
+
+    Returns:
+    """
     feedback = interrupt("編集しますか？ y or n: ")
     if feedback == "y":
         state.research_plan_human_edit = True
@@ -35,30 +62,38 @@ def _research_plan_human_judge(state: State, config: RunnableConfig):
 async def node_generate_research_parameters(
     state: State, config: RunnableConfig
 ) -> dict[str, ResearchParameters]:
-    ai = QueryAnalyzeAI(
-        ChatOpenAI(
-            model="z-ai/glm-4.5-air:free",
-            openai_api_key=getenv("OPENROUTER_API_KEY"),
-            openai_api_base="https://openrouter.ai/api/v1",
-        )
-    )
+    """ユーザー入力から研究パラメータを生成する非同期ノード
+
+    QueryAnalyzeAI を用いて `state.user_input` を解析し、研究に必要な
+    パラメータを生成して辞書形式で返す
+
+    Args:
+        state (State): ユーザー入力を含むState
+
+    Returns:
+        dict[str, ResearchParameters]: キー 'research_parameters' に解析結果を持つ辞書。
+    """
+    ai = QueryAnalyzeAI(llm)
     response = await ai(state.user_input)
-    state.research_parameters = response
     return {"research_parameters": response}
 
 
-def node_make_research_plan(state: State, config: RunnableConfig):
-    ai = PlanResearchAI(
-        ChatOpenAI(
-            model="z-ai/glm-4.5-air:free",
-            openai_api_key=getenv("OPENROUTER_API_KEY"),
-            openai_api_base="https://openrouter.ai/api/v1",
-        )
-    )
-    response = ai(state.user_input)
-    state.research_plan = response
-    print(state)
-    return state
+async def node_make_research_plan(
+    state: State, config: RunnableConfig
+) -> dict[str, GeneratedObjectSchema]:
+    """研究計画を生成する非同期ノード
+
+    PlanResearchAI を用いて、与えられた入力から研究計画オブジェクトを生成します
+
+    Args:
+        state (State): 現在の状態オブジェクト（入力や既存のパラメータを含む）
+
+    Returns:
+        dict[str, GeneratedObjectSchema]: キー 'research_plan' に生成された計画を格納した辞書。
+    """
+    ai = PlanResearchAI(llm)
+    response = await ai(state.user_input)
+    return {"research_plan": response}
 
 
 def node_web_search(state: State, config: RunnableConfig):
@@ -74,6 +109,14 @@ def node_make_report(state: State, config: RunnableConfig):
 
 
 def routing_human_edit_judge(state: State):
+    """人間による編集判定に応じてルーティング先を決定する関数
+
+    Args:
+        state (State): `research_plan_human_edit` フラグを参照するState
+
+    Returns:
+        str: 'edit'（編集）または 'search'（検索）
+    """
     if state.research_plan_human_edit:
         return "edit"
     else:
