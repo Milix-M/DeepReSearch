@@ -1,5 +1,5 @@
 import type { ConversationMeta } from "../types";
-import { formatTimestamp, statusClassName, statusLabel } from "../utils/conversation";
+import { formatTimestamp } from "../utils/conversation";
 
 type HealthStatus = "loading" | "ok" | "error";
 
@@ -11,16 +11,10 @@ interface ConversationSidebarProps {
   onCreateThread: () => void;
 }
 
-const healthStatusText: Record<HealthStatus, string> = {
-  loading: "接続を確認中",
-  ok: "バックエンドと接続済み",
+const healthStatusText: Record<HealthStatus, string | null> = {
+  loading: null,
+  ok: null,
   error: "バックエンドに接続できません",
-};
-
-const healthIndicatorClassName: Record<HealthStatus, string> = {
-  loading: "bg-slate-500 animate-pulse",
-  ok: "bg-emerald-400",
-  error: "bg-rose-400",
 };
 
 export function ConversationSidebar({
@@ -30,14 +24,12 @@ export function ConversationSidebar({
   onSelectThread,
   onCreateThread,
 }: ConversationSidebarProps) {
+  const statusText = healthStatusText[healthStatus];
   return (
     <aside className="hidden h-full w-80 flex-col overflow-hidden border-r border-slate-900/80 bg-slate-900/60 md:flex">
       <div className="border-b border-slate-800 px-6 py-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-lg font-semibold">DeepReSearch Console</h1>
-          <span className={`h-2 w-2 rounded-full ${healthIndicatorClassName[healthStatus]}`} />
-        </div>
-        <p className="mt-2 text-xs text-slate-400">{healthStatusText[healthStatus]}</p>
+        <h1 className="text-lg font-semibold">OSS DeepResearch</h1>
+        {statusText ? <p className="mt-2 text-xs text-slate-400">{statusText}</p> : null}
         <button
           type="button"
           onClick={onCreateThread}
@@ -52,7 +44,6 @@ export function ConversationSidebar({
         ) : (
           threadList.map((thread) => {
             const isActive = selectedThreadId === thread.id;
-            const label = statusLabel(thread.status);
             return (
               <button
                 key={thread.id}
@@ -64,12 +55,7 @@ export function ConversationSidebar({
                     : "border-transparent bg-transparent hover:border-slate-800 hover:bg-slate-900/60"
                 }`}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-sm font-medium text-slate-100">{thread.title}</p>
-                  {label && (
-                    <span className={statusClassName(thread.status, isActive)}>{label}</span>
-                  )}
-                </div>
+                <p className="truncate text-sm font-medium text-slate-100">{thread.title}</p>
                 <p className="mt-1 text-xs text-slate-500">{formatTimestamp(thread.lastUpdated)}</p>
               </button>
             );
