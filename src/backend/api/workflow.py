@@ -11,7 +11,7 @@ from typing import Any, AsyncGenerator, Callable, Dict, Optional
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command, Interrupt
 
-from agent import OSSDeepResearchAgent
+from ..agent import OSSDeepResearchAgent
 
 _STREAM_VERSION = "v1"
 _DEFAULT_RECURSION_LIMIT = 100

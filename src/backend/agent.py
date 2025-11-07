@@ -19,13 +19,13 @@ from langgraph.prebuilt import ToolNode
 from langgraph.types import interrupt
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from src.ai.analyze.query_analyze import QueryAnalyzeAI, ResearchParameters
-from src.ai.reflect.reflect_search_result import ReflectionResultSchema
-from src.ai.schedule.plan_reserch import GeneratedObjectSchema, PlanResearchAI
-from src.ai.search.prompt import DEEP_RESEARCH_SYSTEM_PROMPT
-from src.tools.get_current_date import get_current_date
-from src.tools.search_reflect import reflect_on_results
-from src.tools.web_research import web_research
+from src.backend.ai.analyze.query_analyze import QueryAnalyzeAI, ResearchParameters
+from src.backend.ai.reflect.reflect_search_result import ReflectionResultSchema
+from src.backend.ai.schedule.plan_reserch import GeneratedObjectSchema, PlanResearchAI
+from src.backend.ai.search.prompt import DEEP_RESEARCH_SYSTEM_PROMPT
+from src.backend.tools.get_current_date import get_current_date
+from src.backend.tools.search_reflect import reflect_on_results
+from src.backend.tools.web_research import web_research
 
 
 class NamespaceAwareJsonPlusSerializer(JsonPlusSerializer):
@@ -135,13 +135,13 @@ class OSSDeepResearchAgent:
 
         self.llm = ChatOpenAI(
             model="tngtech/deepseek-r1t2-chimera:free",
-            openai_api_key=getenv("OPENROUTER_API_KEY"),
-            openai_api_base="https://openrouter.ai/api/v1",
+            openai_api_key=getenv("OPENROUTER_API_KEY"),  # type: ignore[call-arg]
+            openai_api_base="https://openrouter.ai/api/v1",  # type: ignore[call-arg]
         )
         self.tool_callable_llm = ChatOpenAI(
             model="z-ai/glm-4.5-air:free",
-            openai_api_key=getenv("OPENROUTER_API_KEY"),
-            openai_api_base="https://openrouter.ai/api/v1",
+            openai_api_key=getenv("OPENROUTER_API_KEY"),  # type: ignore[call-arg]
+            openai_api_base="https://openrouter.ai/api/v1",  # type: ignore[call-arg]
         )
 
         self.llm_with_tools = self.tool_callable_llm.bind_tools(self.tools)
