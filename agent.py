@@ -1,11 +1,17 @@
 from os import getenv
 from typing import Annotated
 
+import langgraph.checkpoint.serde.jsonplus as jsonplus
 import nest_asyncio
+from langchain_core.load.load import DEFAULT_NAMESPACES, Reviver
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
+
+if "src" not in DEFAULT_NAMESPACES:
+    DEFAULT_NAMESPACES.append("src")
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.serde.jsonplus import InvalidModuleError, JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
@@ -21,16 +27,55 @@ from src.tools.search_reflect import reflect_on_results
 from src.tools.web_research import web_research
 
 
+class NamespaceAwareJsonPlusSerializer(JsonPlusSerializer):
+    """LangChain の Reviver にカスタム namespace 設定を行うシリアライザ。"""
+
+    def __init__(self, valid_namespaces: list[str], **kwargs) -> None:
+        """シリアライザを初期化する。
+
+        Args:
+            valid_namespaces (list[str]): 許可する namespace のリスト。
+            **kwargs: 親クラスに渡す追加キーワード引数。
+        """
+        super().__init__(**kwargs)
+        self._reviver_with_ns = Reviver(valid_namespaces=valid_namespaces)
+
+    def _reviver(self, value):
+        """LangChain 形式の JSON を復元する。
+
+        Args:
+            value (dict): 復元対象の JSON データ。
+
+        Returns:
+            Any: 復元後の Python オブジェクト。
+        """
+        if self._allowed_modules and (
+            value.get("lc") == 2
+            and value.get("type") == "constructor"
+            and value.get("id") is not None
+        ):
+            try:
+                return self._revive_lc2(value)
+            except InvalidModuleError as exc:
+                jsonplus.logger.warning(
+                    "Object %s is not in the deserialization allowlist.\n%s",
+                    value.get("id"),
+                    exc.message,
+                )
+
+        return self._reviver_with_ns(value)
+
+
 class State(BaseModel):
-    """ワークフローで共有されるState
+    """ワークフロー全体で共有されるステートモデル。
 
     Attributes:
-        user_input (str | None): ユーザーが入力したクエリ文字列
-        research_parameters (ResearchParameters | None): クエリ解析により生成された研究パラメータ
-        research_plan (GeneratedObjectSchema | None): 研究計画
-        analysys (ReflectionResultSchema | None): 検索結果の解析・反映結果
-        report (str | None): 最終的なリポート本文
-        research_plan_human_edit (bool | None): 研究計画を人間が編集するかどうかのフラグ
+        user_input (str | None): ユーザーが入力したクエリ文字列。
+        research_parameters (ResearchParameters | None): クエリ解析で得られた研究パラメータ。
+        research_plan (GeneratedObjectSchema | None): 研究計画の構造化オブジェクト。
+        analysys (ReflectionResultSchema | None): 検索結果の反映・解析結果。
+        report (str | None): 最終レポート本文。
+        research_plan_human_edit (bool | None): 研究計画を人間が編集するかどうか。
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -47,7 +92,10 @@ class State(BaseModel):
 
 
 class OSSDeepResearchAgent:
+    """Deep Research の各ノードを束ねるエージェント。"""
+
     def __init__(self) -> None:
+        """エージェントを初期化する。"""
         # 使用するツール
         self.tools = [web_research, reflect_on_results, get_current_date]
 
@@ -69,16 +117,14 @@ class OSSDeepResearchAgent:
     async def _node_generate_research_parameters(
         self, state: State, config: RunnableConfig
     ) -> dict[str, ResearchParameters]:
-        """ユーザー入力から研究パラメータを生成する非同期ノード
-
-        QueryAnalyzeAI を用いて `state.user_input` を解析し、研究に必要な
-        パラメータを生成して辞書形式で返す
+        """研究パラメータ生成ノードを実行する。
 
         Args:
-            state (State): ユーザー入力を含むState
+            state (State): 現在のステート。
+            config (RunnableConfig): LangGraph 実行時の設定。
 
         Returns:
-            dict[str, ResearchParameters]: キー 'research_parameters' に解析結果を持つ辞書。
+            dict[str, ResearchParameters]: 生成した研究パラメータを含む差分ステート。
         """
         ai = QueryAnalyzeAI(self.llm)
         response = await ai(state.user_input)
@@ -87,30 +133,28 @@ class OSSDeepResearchAgent:
     async def _node_make_research_plan(
         self, state: State, config: RunnableConfig
     ) -> dict[str, GeneratedObjectSchema]:
-        """研究計画を生成する非同期ノード
-
-        PlanResearchAI を用いて、与えられた入力から研究計画オブジェクトを生成します
+        """研究計画生成ノードを実行する。
 
         Args:
-            state (State): 現在の状態オブジェクト（入力や既存のパラメータを含む）
+            state (State): 現在のステート。
+            config (RunnableConfig): LangGraph 実行時の設定。
 
         Returns:
-            dict[str, GeneratedObjectSchema]: キー 'research_plan' に生成された計画を格納した辞書。
+            dict[str, GeneratedObjectSchema]: 研究計画を含む差分ステート。
         """
         ai = PlanResearchAI(self.llm)
         response = await ai(state.user_input)
         return {"research_plan": response}
 
     async def _research_plan_human_judge(self, state: State, config: RunnableConfig):
-        """研究計画を人間が編集するかどうか判定するノード
-
-        ユーザーに対して「編集しますか？ y or n: 」と尋ね、
-        `state.research_plan_human_edit` を True/False に設定して返す。
+        """研究計画の人手編集要否を判定する。
 
         Args:
-            state (State): 現在のワークフロー状態。`research_plan_human_edit` が更新される
+            state (State): 現在のステート。
+            config (RunnableConfig): LangGraph 実行時の設定。
 
         Returns:
+            State: 判定結果を反映したステート。
         """
         feedback = interrupt("編集しますか？ y or n: ")
         if feedback == "y":
@@ -121,20 +165,30 @@ class OSSDeepResearchAgent:
         return state
 
     def _node_edit_research_plan(self, state: State):
+        """研究計画の編集ノードのプレースホルダ。"""
         return
 
     async def _node_deep_research(self, state: State, config: RunnableConfig):
+        """ReAct ループを用いた深堀り検索を実行する。
+
+        Args:
+            state (State): 現在のステート。
+            config (RunnableConfig): ランググラフ実行時の設定。
+
+        Returns:
+            dict[str, list]: LLM 応答を追記したメッセージ差分。
+        """
         response = await self.llm_with_tools.ainvoke(state.messages)
         return {"messages": [response]}
 
     def _routing_human_edit_judge(self, state: State):
-        """人間による編集判定に応じてルーティング先を決定する関数
+        """人手編集フラグに基づき次ノードを決定する。
 
         Args:
-            state (State): `research_plan_human_edit` フラグを参照するState
+            state (State): 判定対象のステート。
 
         Returns:
-            str: 'edit'（編集）または 'search'（検索）
+            str: 次に実行するノード名。
         """
         if state.research_plan_human_edit:
             return "edit"
@@ -142,6 +196,14 @@ class OSSDeepResearchAgent:
             return "search"
 
     def _routing_should_continue(self, state: State):
+        """ReAct ループ継続可否を判定する。
+
+        Args:
+            state (State): 最新メッセージを保持するステート。
+
+        Returns:
+            str: ルーティング先ノード名。
+        """
         last_message = state.messages[-1]
         if last_message.tool_calls:
             # ツール呼び出しがあれば 'tools' ノードへ
@@ -151,7 +213,14 @@ class OSSDeepResearchAgent:
             return "finish_research"
 
     def _node_prepare_research(self, state: State):
-        """計画ノードの結果を基に、ReActエージェント用の初期メッセージを作成する"""
+        """ReAct 用の初期メッセージを構築する。
+
+        Args:
+            state (State): 研究計画とパラメータを保持するステート。
+
+        Returns:
+            dict[str, list]: システム・ユーザーメッセージを含む差分ステート。
+        """
         query = state.user_input
         plan = state.research_plan
         params = state.research_parameters
@@ -174,6 +243,14 @@ class OSSDeepResearchAgent:
         return {"messages": [system_message, human_message]}
 
     def _node_write_research_result(self, state: State):
+        """LLM 応答から最終レポート本文を抽出する。
+
+        Args:
+            state (State): 最終メッセージが格納されたステート。
+
+        Returns:
+            dict[str, str | None]: レポート本文を含む差分ステート。
+        """
         report_text = None
 
         if state.messages:
@@ -202,6 +279,11 @@ class OSSDeepResearchAgent:
         return {"report": report_text}
 
     def get_compiled_graph(self):
+        """LangGraph のステートマシンを構築して返す。
+
+        Returns:
+            StateGraph: コンパイル済みの LangGraph。
+        """
         graph = StateGraph(State)
         node_tools = ToolNode(self.tools)
 
@@ -240,7 +322,9 @@ class OSSDeepResearchAgent:
         )
         graph.add_edge("_node_write_research_result", END)
 
-        memory = MemorySaver()
+        memory = MemorySaver(
+            serde=NamespaceAwareJsonPlusSerializer(valid_namespaces=["src"])
+        )
         compiled_graph = graph.compile(checkpointer=memory)
 
         # graph実行イメージ保存
