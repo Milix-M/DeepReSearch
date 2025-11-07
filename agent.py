@@ -174,7 +174,32 @@ class OSSDeepResearchAgent:
         return {"messages": [system_message, human_message]}
 
     def _node_write_research_result(self, state: State):
-        return
+        report_text = None
+
+        if state.messages:
+            last_message = state.messages[-1]
+            content = getattr(last_message, "content", None)
+
+            if isinstance(content, str):
+                report_text = content
+            elif isinstance(content, list):
+                text_fragments: list[str] = []
+                for item in content:
+                    if isinstance(item, dict):
+                        if "text" in item and isinstance(item["text"], str):
+                            text_fragments.append(item["text"])
+                        elif "type" in item and item.get("type") == "text":
+                            value = item.get("text") or item.get("value")
+                            if isinstance(value, str):
+                                text_fragments.append(value)
+                        else:
+                            text_fragments.append(str(item))
+                    elif isinstance(item, str):
+                        text_fragments.append(item)
+                if text_fragments:
+                    report_text = "\n\n".join(text_fragments)
+
+        return {"report": report_text}
 
     def get_compiled_graph(self):
         graph = StateGraph(State)
