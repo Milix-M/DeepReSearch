@@ -1,9 +1,10 @@
-from pydantic import BaseModel, Field
+from langchain_core.load.serializable import Serializable
+from pydantic import Field
 
 from .prompt import QUERY_ANALYZE_AI_SYSTEM_PROMPT
 
 
-class ResearchParameters(BaseModel):
+class ResearchParameters(Serializable):
     """クエリに対する研究実行パラメータを表す構造化モデル。
 
     Attributes:
@@ -25,6 +26,14 @@ class ResearchParameters(BaseModel):
         description="各クエリに対して実行する検索反復の回数",
     )
     reasoning: str = Field(description="パラメータ選択の理由")
+
+    @classmethod
+    def is_lc_serializable(cls) -> bool:
+        return True
+
+    @classmethod
+    def get_lc_namespace(cls) -> list[str]:
+        return ["DeepReSearch", "ai", "analyze"]
 
 
 class QueryAnalyzeAI:
