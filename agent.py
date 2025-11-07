@@ -1,6 +1,7 @@
 from os import getenv
 from typing import Annotated
 
+import asyncio
 import langgraph.checkpoint.serde.jsonplus as jsonplus
 import nest_asyncio
 from langchain_core.load.load import DEFAULT_NAMESPACES, Reviver
@@ -145,7 +146,25 @@ class OSSDeepResearchAgent:
 
         self.llm_with_tools = self.tool_callable_llm.bind_tools(self.tools)
 
-        nest_asyncio.apply()
+        # uvloop が利用されている場合は nest_asyncio が未対応のため適用をスキップ。
+        loop = None
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = None
+
+        should_patch = True
+        if loop and getattr(loop.__class__, "__module__", "").startswith("uvloop"):
+            should_patch = False
+
+        if should_patch:
+            try:
+                nest_asyncio.apply(loop)
+            except ValueError:
+                pass
 
     async def _node_generate_research_parameters(
         self, state: State, config: RunnableConfig
