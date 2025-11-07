@@ -53,12 +53,12 @@ class SearchResultAnalyzeAndReflectAI:
         self.llm = llm
         self.structured_llm = llm.with_structured_output(ReflectionResultSchema)
 
-    def __call__(self, query, result) -> ReflectionResultSchema:
+    def __call__(self, query, results) -> ReflectionResultSchema:
         prompt = [
             (
                 "system",
                 SEARCH_RESULT_ANALYZE_AND_REFLECTION_SYSTEM_PROMPT.format(
-                    query=query, result=result
+                    query=query, results=results
                 ),
             )
         ]
