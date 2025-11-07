@@ -12,7 +12,7 @@ export function ExecutionIndicator({ message }: ExecutionIndicatorProps) {
       <span className="inline-flex h-4 w-4 animate-spin rounded-full border-2 border-emerald-400 border-r-transparent" />
       <div className="space-y-1">
         <p>{message}</p>
-        <p className="text-xs text-slate-400">完了までお待ちください。</p>
+        <p className="text-xs text-slate-400">処理が完了するまでお待ちください。</p>
       </div>
     </div>
   );
