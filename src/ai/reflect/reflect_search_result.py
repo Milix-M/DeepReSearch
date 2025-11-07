@@ -17,7 +17,7 @@ class KeyInsight(Serializable):
 
     @classmethod
     def get_lc_namespace(cls) -> list[str]:
-        return ["DeepReSearch", "ai", "reflect"]
+        return ["src", "ai", "reflect"]
 
 
 class ImprovedQuery(Serializable):
@@ -32,7 +32,7 @@ class ImprovedQuery(Serializable):
 
     @classmethod
     def get_lc_namespace(cls) -> list[str]:
-        return ["DeepReSearch", "ai", "reflect"]
+        return ["src", "ai", "reflect"]
 
 
 class ReflectionResultSchema(Serializable):
@@ -57,7 +57,7 @@ class ReflectionResultSchema(Serializable):
 
     @classmethod
     def get_lc_namespace(cls) -> list[str]:
-        return ["DeepReSearch", "ai", "reflect"]
+        return ["src", "ai", "reflect"]
 
 
 class SearchResultAnalyzeAndReflectAI:
