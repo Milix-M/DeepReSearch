@@ -40,21 +40,6 @@ app.add_middleware(
 )
 
 
-async def _send_ws_events(
-    websocket: WebSocket, thread_id: str, events: list[Dict[str, Any]]
-) -> None:
-    """WebSocketへ逐次イベントを送信する。"""
-
-    for event in events:
-        await websocket.send_json(
-            {
-                "type": "event",
-                "thread_id": thread_id,
-                "payload": event,
-            }
-        )
-
-
 def _interrupt_from_raw(raw: Dict[str, Any] | None) -> InterruptPayload | None:
     if not raw:
         return None
@@ -126,11 +111,20 @@ async def websocket_research(websocket: WebSocket) -> None:
         thread_id = workflow_service.create_thread_id()
         await websocket.send_json({"type": "thread_started", "thread_id": thread_id})
 
+        async def forward_event(event: Dict[str, Any]) -> None:
+            await websocket.send_json(
+                {
+                    "type": "event",
+                    "thread_id": thread_id,
+                    "payload": event,
+                }
+            )
+
         outcome = await workflow_service.start_research(
             thread_id=thread_id,
             query=query,
+            event_consumer=forward_event,
         )
-        await _send_ws_events(websocket, thread_id, outcome.events)
 
         while True:
             if outcome.status == "completed":
@@ -179,8 +173,8 @@ async def websocket_research(websocket: WebSocket) -> None:
                 thread_id=thread_id,
                 decision=decision,
                 plan_update=plan_update,
+                event_consumer=forward_event,
             )
-            await _send_ws_events(websocket, thread_id, outcome.events)
 
     except WebSocketDisconnect:  # pragma: no cover - 切断時
         return
