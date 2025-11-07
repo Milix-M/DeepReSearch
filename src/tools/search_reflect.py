@@ -1,18 +1,17 @@
-
 from os import getenv
+
 from langchain_core.tools import tool
-from pydantic import BaseModel, Field
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
 
+from src.ai.reflect.reflect_search_result import SearchResultAnalyzeAndReflectAI
 
-from src.ai.reflect.reflect_search_result import ReflectionResultSchema, SearchResultAnalyzeAndReflectAI
 
 class ReflectInput(BaseModel):
     query: str = Field(description="検索に使用した元のクエリ")
     results: str = Field(description="検索から得られた結果")
     iteration: int = Field(description="現在の検索反復回数")
     total_iterations: int = Field(description="計画された総検索反復回数")
-    
 
 
 @tool(args_schema=ReflectInput)
@@ -42,8 +41,8 @@ def reflect_on_results(query, results, iteration, total_iterations) -> dict:
         openai_api_base="https://openrouter.ai/api/v1",
     )
     ai = SearchResultAnalyzeAndReflectAI(llm)
-    response =  ai(query, results)
-    
+    response = ai(query, results)
+
     result = {
         "key_insights": response.key_insights,
         "information_gaps": response.information_gaps,
