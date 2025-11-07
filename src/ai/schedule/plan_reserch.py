@@ -43,10 +43,6 @@ class Section(Serializable):
     def is_lc_serializable(cls) -> bool:
         return True
 
-    @classmethod
-    def get_lc_namespace(cls) -> list[str]:
-        return ["DeepReSearch", "ai", "schedule"]
-
 
 class Structure(Serializable):
     """ドキュメント全体の導入と結論（要約）を保持するモデル。
@@ -62,10 +58,6 @@ class Structure(Serializable):
     @classmethod
     def is_lc_serializable(cls) -> bool:
         return True
-
-    @classmethod
-    def get_lc_namespace(cls) -> list[str]:
-        return ["DeepReSearch", "ai", "schedule"]
 
 
 class ResearchPlan(Serializable):
@@ -85,10 +77,6 @@ class ResearchPlan(Serializable):
     def is_lc_serializable(cls) -> bool:
         return True
 
-    @classmethod
-    def get_lc_namespace(cls) -> list[str]:
-        return ["DeepReSearch", "ai", "schedule"]
-
 
 class GeneratedObjectSchema(Serializable):
     """LLM の構造化出力がこのスキーマにマッチすることを期待する。
@@ -104,10 +92,6 @@ class GeneratedObjectSchema(Serializable):
     @classmethod
     def is_lc_serializable(cls) -> bool:
         return True
-
-    @classmethod
-    def get_lc_namespace(cls) -> list[str]:
-        return ["DeepReSearch", "ai", "schedule"]
 
 
 class PlanResearchAI:

@@ -31,10 +31,6 @@ class ResearchParameters(Serializable):
     def is_lc_serializable(cls) -> bool:
         return True
 
-    @classmethod
-    def get_lc_namespace(cls) -> list[str]:
-        return ["src", "ai", "analyze"]
-
 
 class QueryAnalyzeAI:
     """LLM に対してResearchParametersを要求するためのラッパークラス

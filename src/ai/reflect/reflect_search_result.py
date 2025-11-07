@@ -15,10 +15,6 @@ class KeyInsight(Serializable):
     def is_lc_serializable(cls) -> bool:
         return True
 
-    @classmethod
-    def get_lc_namespace(cls) -> list[str]:
-        return ["src", "ai", "reflect"]
-
 
 class ImprovedQuery(Serializable):
     """改善提案された単一の検索クエリを定義します。"""
@@ -29,10 +25,6 @@ class ImprovedQuery(Serializable):
     @classmethod
     def is_lc_serializable(cls) -> bool:
         return True
-
-    @classmethod
-    def get_lc_namespace(cls) -> list[str]:
-        return ["src", "ai", "reflect"]
 
 
 class ReflectionResultSchema(Serializable):
@@ -54,10 +46,6 @@ class ReflectionResultSchema(Serializable):
     @classmethod
     def is_lc_serializable(cls) -> bool:
         return True
-
-    @classmethod
-    def get_lc_namespace(cls) -> list[str]:
-        return ["src", "ai", "reflect"]
 
 
 class SearchResultAnalyzeAndReflectAI:
