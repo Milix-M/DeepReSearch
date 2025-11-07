@@ -6,16 +6,9 @@ interface ChatTranscriptProps {
   hideEmptyState?: boolean;
 }
 
-export function ChatTranscript({ messages, hideEmptyState = false }: ChatTranscriptProps) {
+export function ChatTranscript({ messages, hideEmptyState: _hideEmptyState = false }: ChatTranscriptProps) {
   if (messages.length === 0) {
-    if (hideEmptyState) {
-      return null;
-    }
-    return (
-      <div className="rounded-2xl border border-dashed border-slate-800/80 bg-slate-900/40 px-6 py-10 text-center text-sm text-slate-500">
-        ここにリサーチの進行ログが表示されます。
-      </div>
-    );
+    return null;
   }
 
   return (
