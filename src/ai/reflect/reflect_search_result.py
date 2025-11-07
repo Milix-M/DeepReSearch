@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-from reflect.prompt import SEARCH_RESULT_ANALYZE_AND_REFLECTION_SYSTEM_PROMPT
+from .prompt import SEARCH_RESULT_ANALYZE_AND_REFLECTION_SYSTEM_PROMPT
 
 
 class KeyInsight(BaseModel):
