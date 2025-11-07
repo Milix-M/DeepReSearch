@@ -1,15 +1,17 @@
+from os import getenv
+
 from langchain_core.runnables import RunnableConfig
+from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from pydantic import BaseModel, Field
 
-from src.ai.analyze.query_analyze import ResearchParameters
+from src.ai.analyze.query_analyze import QueryAnalyzeAI, ResearchParameters
 from src.ai.reflect.reflect_search_result import ReflectionResultSchema
 from src.ai.schedule.plan_reserch import GeneratedObjectSchema
 
 
 class State(BaseModel):
-    value: str = Field()
     research_paramerters: ResearchParameters = Field()
     research_plan: GeneratedObjectSchema = Field()
     analisys: ReflectionResultSchema = Field()
@@ -40,8 +42,21 @@ def _research_plan_human_judge(state: State, config: RunnableConfig):
     return state
 
 
-def node_generate_research_parameters(state: InputState, config: RunnableConfig):
-    return
+def node_generate_research_parameters(
+    input_state: InputState, state: State, config: RunnableConfig
+):
+    print("--- (1) 研究パラメータの生成 ---")
+    user_input = input_state.user_input
+    ai = QueryAnalyzeAI(
+        ChatOpenAI(
+            model="z-ai/glm-4.5-air:free",
+            openai_api_key=getenv("OPENROUTER_API_KEY"),
+            openai_api_base="https://openrouter.ai/api/v1",
+        )
+    )
+    response = ai(user_input)
+    state.research_paramerters = response
+    return state
 
 
 def node_make_research_plan(state: State, config: RunnableConfig):
