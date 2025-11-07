@@ -18,15 +18,12 @@ export function ResearchInputForm({
   return (
     <footer className="shrink-0 border-t border-slate-900/70 px-6 py-5">
       <form onSubmit={onSubmit} className="flex flex-col gap-3">
-        <label className="text-xs font-medium uppercase tracking-wide text-slate-400">
-          Deep Research クエリ
-        </label>
         <textarea
           ref={inputRef}
           value={value}
           onChange={(event) => onChange(event.target.value)}
           rows={3}
-          placeholder="調査したい内容を入力してください"
+          placeholder="調べたい内容を入力"
           className="w-full resize-none rounded-2xl border border-slate-800 bg-slate-950/60 px-4 py-3 text-sm text-slate-100 shadow-inner focus:border-emerald-400 focus:outline-none"
           disabled={isConnecting}
         />
