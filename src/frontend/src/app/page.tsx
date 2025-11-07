@@ -23,7 +23,6 @@ import type {
   ResearchInsightState,
   ResearchPlanFormState,
 } from "./types";
-import { statusClassName, statusLabel } from "./utils/conversation";
 import { ConversationSidebar } from "./components/ConversationSidebar";
 import { ConversationHeader } from "./components/ConversationHeader";
 import { ChatTranscript } from "./components/ChatTranscript";
@@ -892,9 +891,6 @@ export default function Home() {
   const selectedMessages = effectiveThreadId
     ? messagesByThread[effectiveThreadId] ?? []
     : [];
-  const selectedStatusLabel = selectedConversation
-    ? statusLabel(selectedConversation.status)
-    : null;
   const currentState = effectiveThreadId
     ? threadStates[effectiveThreadId]
     : undefined;
@@ -1211,7 +1207,7 @@ export default function Home() {
             setIsConnecting(false);
             setActiveSteps((prev) => ({
               ...prev,
-              [message.thread_id]: "リサーチを準備中です...",
+              [message.thread_id]: "調査計画を作成しています...",
             }));
             setInsights((prev) => {
               if (!prev[message.thread_id]) {
@@ -1534,7 +1530,7 @@ export default function Home() {
 
   const showExecutionIndicator = selectedConversation?.status === "running" && !currentInterrupt;
   const executionMessage = showExecutionIndicator
-    ? activeStepMessage ?? "リサーチを実行中です..."
+    ? activeStepMessage ?? "調査計画を作成しています..."
     : null;
 
   const interruptMessageIndex = useMemo(() => {
@@ -1583,13 +1579,8 @@ export default function Home() {
   ]);
 
   const headerSubtitle = selectedConversation
-    ? selectedStatusLabel
-      ? `ステータス: ${selectedStatusLabel}`
-      : null
+    ? null
     : "左の一覧からスレッドを選択するか、新しいリサーチを開始してください。";
-  const headerBadgeClass = selectedConversation && selectedStatusLabel
-    ? statusClassName(selectedConversation.status, false)
-    : null;
   const shouldShowReport = researchReportValue !== undefined && researchReportValue !== null;
   const isEditingPlan = editingThreadId === effectiveThreadId;
 
@@ -1606,8 +1597,6 @@ export default function Home() {
         <ConversationHeader
           title={selectedConversation?.title ?? "Deep Research"}
           subtitle={headerSubtitle}
-          statusBadgeLabel={selectedConversation && selectedStatusLabel ? selectedStatusLabel : null}
-          statusBadgeClassName={headerBadgeClass}
           errorMessage={errorMessage}
         />
         <section ref={chatScrollRef} className="flex-1 overflow-y-auto px-6 py-6">
