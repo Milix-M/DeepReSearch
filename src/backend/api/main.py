@@ -2,16 +2,42 @@
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketState
 
 from .schemas import HealthResponse, InterruptPayload, StateResponse, ThreadListResponse
 from .workflow import StateNotFoundError, workflow_service
 
 app = FastAPI(title="Deep Research API", version="1.0.0")
+
+_DEFAULT_ALLOWED_ORIGINS = {
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+}
+
+
+def _resolve_allowed_origins() -> list[str]:
+    """CORS許可オリジンを環境変数から解決する。"""
+
+    raw_value = os.getenv("CORS_ALLOW_ORIGINS", "")
+    candidates = [origin.strip() for origin in raw_value.split(",") if origin.strip()]
+    if candidates:
+        return candidates
+    return list(_DEFAULT_ALLOWED_ORIGINS)
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_resolve_allowed_origins(),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 async def _send_ws_events(

@@ -1,0 +1,15 @@
+# Global Docker ignore rules
+.git
+.gitignore
+.vscode
+__pycache__/
+*.py[cod]
+*.so
+*.swp
+.venv/
+.env
+.env.*
+node_modules/
+npm-debug.log
+yarn-error.log
+.DS_Store
