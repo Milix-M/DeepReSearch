@@ -39,13 +39,16 @@ export function PlanInterruptPanel({
     return null;
   }
 
+  const interruptText = formatInterruptContent(interrupt.value).trim();
+  const shouldShowMessage = interruptText.length > 0 && interruptText !== "調査計画を編集しますか？";
+
   if (!isEditing) {
     return (
       <div className="max-w-3xl rounded-2xl border border-amber-500/40 bg-amber-500/10 p-5">
-        <h3 className="text-sm font-semibold text-amber-200">調査計画の確認が求められています</h3>
-        <p className="mt-2 whitespace-pre-wrap text-sm text-amber-100/90">
-          {formatInterruptContent(interrupt.value)}
-        </p>
+        <h3 className="text-sm font-semibold text-amber-200">この計画で進めますか？</h3>
+        {shouldShowMessage ? (
+          <p className="mt-2 whitespace-pre-wrap text-sm text-amber-100/90">{interruptText}</p>
+        ) : null}
         <div className="mt-4 flex flex-wrap gap-3">
           <button
             type="button"
@@ -59,7 +62,7 @@ export function PlanInterruptPanel({
             onClick={onStartEditing}
             className="rounded-lg border border-amber-400/60 bg-slate-900/80 px-4 py-2 text-sm text-amber-100 transition-colors hover:border-amber-300 hover:bg-amber-500/20"
           >
-            計画を編集
+            修正してから進める
           </button>
         </div>
       </div>
@@ -73,10 +76,10 @@ export function PlanInterruptPanel({
 
   return (
     <div className="max-w-3xl rounded-2xl border border-amber-500/40 bg-amber-500/10 p-5">
-      <h3 className="text-sm font-semibold text-amber-200">調査計画の確認が求められています</h3>
-      <p className="mt-2 whitespace-pre-wrap text-sm text-amber-100/90">
-        {formatInterruptContent(interrupt.value)}
-      </p>
+      <h3 className="text-sm font-semibold text-amber-200">計画内容を調整して再開</h3>
+      {shouldShowMessage ? (
+        <p className="mt-2 whitespace-pre-wrap text-sm text-amber-100/90">{interruptText}</p>
+      ) : null}
       <form className="mt-4 space-y-5" onSubmit={handleSubmit}>
         <div className="space-y-5">
           <div className="space-y-2">
