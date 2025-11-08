@@ -1,7 +1,12 @@
+import { useEffect, useRef } from "react";
+import ReactMarkdown from "react-markdown";
+import type { Components } from "react-markdown";
 import type { ResearchPlanFormState } from "../types";
 
 interface ResearchPlanViewerProps {
   plan: ResearchPlanFormState | null;
+  defaultOpen?: boolean;
+  markdownComponents: Components;
 }
 
 function normalizeSections(plan: ResearchPlanFormState | null) {
@@ -20,7 +25,7 @@ function normalizeSections(plan: ResearchPlanFormState | null) {
     .filter((section) => section.title || section.focus || section.keyQuestions.length > 0);
 }
 
-export function ResearchPlanViewer({ plan }: ResearchPlanViewerProps) {
+export function ResearchPlanViewer({ plan, defaultOpen = false, markdownComponents }: ResearchPlanViewerProps) {
   if (!plan) {
     return null;
   }
@@ -30,16 +35,40 @@ export function ResearchPlanViewer({ plan }: ResearchPlanViewerProps) {
   const conclusion = plan.structure.conclusion.trim();
   const purpose = plan.purpose.trim();
   const meta = plan.metaAnalysis.trim();
+  const detailsRef = useRef<HTMLDetailsElement | null>(null);
+  const summaryPreview = purpose || visibleSections[0]?.title || "内容を確認";
+
+  const renderMarkdownBlock = (value: string, placeholder: string) => {
+    if (!value) {
+      return <p className="text-slate-500">{placeholder}</p>;
+    }
+    return <ReactMarkdown components={markdownComponents}>{value}</ReactMarkdown>;
+  };
+
+  useEffect(() => {
+    if (!detailsRef.current) {
+      return;
+    }
+    detailsRef.current.open = defaultOpen;
+  }, [defaultOpen, plan]);
 
   return (
-    <div className="max-w-3xl rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
-      <h3 className="text-sm font-semibold text-slate-200">現行の調査計画</h3>
+    <details
+      ref={detailsRef}
+      className="max-w-3xl rounded-2xl border border-slate-800 bg-slate-900/70 p-5"
+    >
+      <summary className="flex cursor-pointer items-center justify-between gap-3 text-sm font-semibold text-slate-200">
+        <span>調査計画</span>
+        <span className="text-xs font-normal text-slate-400">
+          {summaryPreview.length > 40 ? `${summaryPreview.slice(0, 40)}…` : summaryPreview}
+        </span>
+      </summary>
       <div className="mt-4 space-y-5 text-sm text-slate-200">
         <section>
           <h4 className="text-xs font-medium uppercase tracking-wide text-slate-400">調査目的</h4>
-          <p className="mt-2 whitespace-pre-wrap rounded-xl bg-slate-950/60 px-4 py-3 text-sm leading-relaxed text-slate-100">
-            {purpose || "(未入力)"}
-          </p>
+          <div className="mt-2 rounded-xl bg-slate-950/60 px-4 py-3 text-sm leading-relaxed text-slate-100">
+            {renderMarkdownBlock(purpose, "(未入力)")}
+          </div>
         </section>
 
         <section>
@@ -49,17 +78,17 @@ export function ResearchPlanViewer({ plan }: ResearchPlanViewerProps) {
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                 イントロダクション
               </p>
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-100">
-                {introduction || "(未入力)"}
-              </p>
+              <div className="mt-2 text-sm leading-relaxed text-slate-100">
+                {renderMarkdownBlock(introduction, "(未入力)")}
+              </div>
             </div>
             <div className="rounded-xl bg-slate-950/60 p-4">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                 結論
               </p>
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-100">
-                {conclusion || "(未入力)"}
-              </p>
+              <div className="mt-2 text-sm leading-relaxed text-slate-100">
+                {renderMarkdownBlock(conclusion, "(未入力)")}
+              </div>
             </div>
           </div>
         </section>
@@ -88,9 +117,9 @@ export function ResearchPlanViewer({ plan }: ResearchPlanViewerProps) {
                       #{index + 1}
                     </span>
                   </header>
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-slate-200">
-                    {section.focus || "(概要未設定)"}
-                  </p>
+                  <div className="mt-2 text-sm leading-relaxed text-slate-200">
+                    {renderMarkdownBlock(section.focus, "(概要未設定)")}
+                  </div>
                   {section.keyQuestions.length > 0 ? (
                     <div className="mt-3 space-y-1 text-sm text-slate-300">
                       {section.keyQuestions.map((question, questionIndex) => (
@@ -98,9 +127,9 @@ export function ResearchPlanViewer({ plan }: ResearchPlanViewerProps) {
                           key={`question-${index}-${questionIndex}`}
                           className="flex items-start gap-3 border-l-2 border-emerald-400/70 pl-3"
                         >
-                          <span className="flex-1 whitespace-pre-wrap leading-relaxed">
-                            {question}
-                          </span>
+                          <div className="flex-1 leading-relaxed">
+                            <ReactMarkdown components={markdownComponents}>{question}</ReactMarkdown>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -116,12 +145,12 @@ export function ResearchPlanViewer({ plan }: ResearchPlanViewerProps) {
             <h4 className="text-xs font-medium uppercase tracking-wide text-slate-400">
               メタ分析メモ
             </h4>
-            <p className="mt-2 whitespace-pre-wrap rounded-xl bg-slate-950/60 px-4 py-3 text-sm leading-relaxed text-slate-100">
-              {meta}
-            </p>
+            <div className="mt-2 rounded-xl bg-slate-950/60 px-4 py-3 text-sm leading-relaxed text-slate-100">
+              <ReactMarkdown components={markdownComponents}>{meta}</ReactMarkdown>
+            </div>
           </section>
         ) : null}
       </div>
-    </div>
+    </details>
   );
 }
