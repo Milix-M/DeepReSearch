@@ -63,8 +63,14 @@ interface ResearchControllerResult {
   messagesBeforeDecision: ChatMessage[];
   messagesAfterDecision: ChatMessage[];
   isEditingPlan: boolean;
+  overallProgress: {
+    completed: number;
+    total: number;
+    steps: { label: string; done: boolean }[];
+  } | null;
   handleSubmit: (event: FormEvent<HTMLFormElement>) => void;
   handleSelectThread: (threadId: string) => void;
+  beginNewThread: () => void;
   handlePlanDecision: (decision: "y" | "n") => void;
   startPlanEditing: () => void;
   cancelPlanEditing: () => void;
@@ -133,6 +139,7 @@ export function useResearchController(): ResearchControllerResult {
   const [planError, setPlanError] = useState<string | null>(null);
   const [healthStatus, setHealthStatus] = useState<"loading" | "ok" | "error">("loading");
   const [activeSteps, setActiveSteps] = useState<Record<string, string>>({});
+  const [isDraftingNewThread, setIsDraftingNewThread] = useState(false);
   const [threadTitles, setThreadTitles] = useState<Record<string, string>>(() =>
     loadThreadTitlesFromStorage()
   );
@@ -146,7 +153,12 @@ export function useResearchController(): ResearchControllerResult {
       ),
     [conversations]
   );
-  const effectiveThreadId = useMemo(() => activeThreadId ?? (threadList.length > 0 ? threadList[0].id : null), [activeThreadId, threadList]);
+  const effectiveThreadId = useMemo(() => {
+    if (isDraftingNewThread) {
+      return null;
+    }
+    return activeThreadId ?? (threadList.length > 0 ? threadList[0].id : null);
+  }, [activeThreadId, isDraftingNewThread, threadList]);
 
   const selectedConversation = effectiveThreadId ? conversations[effectiveThreadId] : undefined;
   const selectedMessages = effectiveThreadId ? messagesByThread[effectiveThreadId] ?? [] : [];
@@ -223,11 +235,13 @@ export function useResearchController(): ResearchControllerResult {
           return { ...prev, [threadId]: nextMessages };
         }
 
+        const insightDisplay = buildInsightContent(insight);
         const nextMessage: ChatMessage = {
           id: messageId,
           role: "assistant",
           title: "リサーチ進行状況",
-          content: buildInsightContent(insight),
+          content: insightDisplay.content,
+          reasoning: insightDisplay.reasoning,
           createdAt: timestamp,
         };
 
@@ -473,6 +487,7 @@ export function useResearchController(): ResearchControllerResult {
               createdAt: now + 1,
             });
             pendingQueryRef.current = "";
+            setIsDraftingNewThread(false);
             setActiveThreadId(message.thread_id);
             activeThreadRef.current = message.thread_id;
             setIsConnecting(false);
@@ -712,10 +727,21 @@ export function useResearchController(): ResearchControllerResult {
       setActiveThreadId(threadId);
       setEditingThreadId(null);
       setPlanError(null);
+      setIsDraftingNewThread(false);
       refreshThreadState(threadId);
     },
     [refreshThreadState]
   );
+
+  const beginNewThread = useCallback(() => {
+    setIsDraftingNewThread(true);
+    setActiveThreadId(null);
+    activeThreadRef.current = null;
+    setEditingThreadId(null);
+    setPlanError(null);
+    setErrorMessage(null);
+    setInputValueState("");
+  }, []);
 
   const updatePlanFormState = useCallback(
     (threadId: string, updater: (draft: ResearchPlanFormState) => void) => {
@@ -801,8 +827,15 @@ export function useResearchController(): ResearchControllerResult {
     [appendMessage, effectiveThreadId, planForms]
   );
 
+  const researchParametersValue = getRecordValue<unknown>(currentState?.state, "research_parameters");
   const researchPlanValue = getRecordValue<unknown>(currentState?.state, "research_plan");
-  const researchReportValue = getRecordValue<unknown>(currentState?.state, "research_report");
+  const researchReportValue = (() => {
+    const directReport = getRecordValue<unknown>(currentState?.state, "report");
+    if (directReport !== undefined) {
+      return directReport;
+    }
+    return getRecordValue<unknown>(currentState?.state, "research_report");
+  })();
   const activeStepMessage = effectiveThreadId ? activeSteps[effectiveThreadId] : undefined;
 
   const displayPlan = useMemo(() => {
@@ -816,6 +849,26 @@ export function useResearchController(): ResearchControllerResult {
     () => normalizeReportContent(researchReportValue),
     [researchReportValue]
   );
+  const hasReport = reportContent.markdown !== null || reportContent.fallback !== null;
+
+  const overallProgress = useMemo(() => {
+    if (!selectedConversation) {
+      return null;
+    }
+
+    const steps = [
+      { label: "クエリ分析", done: Boolean(researchParametersValue) },
+      { label: "調査計画", done: researchPlanValue !== undefined && researchPlanValue !== null },
+      {
+        label: "調査実行",
+        done: selectedConversation.status === "completed" || hasReport,
+      },
+      { label: "最終レポート", done: hasReport },
+    ];
+
+    const completed = steps.reduce((count, step) => (step.done ? count + 1 : count), 0);
+    return { completed, total: steps.length, steps };
+  }, [hasReport, researchParametersValue, researchPlanValue, selectedConversation]);
 
   const executionMessage = useMemo(() => {
     const showExecutionIndicator = selectedConversation?.status === "running" && !currentInterrupt;
@@ -945,8 +998,10 @@ export function useResearchController(): ResearchControllerResult {
     messagesBeforeDecision,
     messagesAfterDecision,
     isEditingPlan,
+    overallProgress,
     handleSubmit,
     handleSelectThread,
+    beginNewThread,
     handlePlanDecision,
     startPlanEditing,
     cancelPlanEditing,
