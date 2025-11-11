@@ -1,26 +1,107 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --background: #020617;
+  --foreground: #e2e8f0;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #020617;
+    --foreground: #f8fafc;
   }
 }
 
 body {
-  background: var(--background);
+  min-height: 100vh;
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  background: radial-gradient(circle at 20% 20%, rgba(16, 185, 129, 0.12), transparent 45%),
+    radial-gradient(circle at 80% 0%, rgba(59, 130, 246, 0.08), transparent 55%),
+    radial-gradient(circle at 0% 90%, rgba(14, 165, 233, 0.12), transparent 50%),
+    #020617;
+  background-attachment: fixed;
+  scroll-behavior: smooth;
+}
+
+::selection {
+  background: rgba(16, 185, 129, 0.32);
+  color: #ecfeff;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.7), rgba(45, 212, 191, 0.4));
+  border-radius: 9999px;
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes glow-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(16, 185, 129, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(16, 185, 129, 0.25);
+  }
+}
+
+.message-card {
+  opacity: 0;
+  transform: translateY(12px);
+  animation: fade-in-up 0.5s ease-out forwards;
+  transition: transform 0.3s ease-out, box-shadow 0.3s ease-out;
+}
+
+.message-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 30px 50px -40px rgba(16, 185, 129, 0.75);
+}
+
+.floating-pulse {
+  animation: glow-pulse 3s ease-in-out infinite;
+}
+
+.glass-elevated {
+  backdrop-filter: blur(22px);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.88), rgba(8, 47, 73, 0.72));
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  box-shadow: 0 20px 60px -40px rgba(15, 118, 110, 0.85);
+}
+
+.glass-panel {
+  backdrop-filter: blur(16px);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.75), rgba(30, 41, 59, 0.6));
+  border: 1px solid rgba(100, 116, 139, 0.22);
+}
+
+.gradient-border {
+  position: relative;
+}
+
+.gradient-border::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.45), rgba(59, 130, 246, 0.35));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
 }

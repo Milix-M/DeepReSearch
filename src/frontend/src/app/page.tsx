@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { ChatTranscript } from "./components/ChatTranscript";
 import { ConversationHeader } from "./components/ConversationHeader";
 import { ConversationSidebar } from "./components/ConversationSidebar";
@@ -11,7 +11,7 @@ import { ResearchPlanViewer } from "./components/ResearchPlanViewer";
 import { ResearchReportViewer } from "./components/ResearchReportViewer";
 import { useResearchController } from "./hooks/useResearchController";
 import { markdownComponents } from "./utils/markdown-components";
-import { formatInterruptContent, mergeClassNames } from "./utils/chat-helpers";
+import { formatInterruptContent } from "./utils/chat-helpers";
 
 export default function Home() {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -37,8 +37,10 @@ export default function Home() {
     messagesBeforeDecision,
     messagesAfterDecision,
     isEditingPlan,
+    overallProgress,
     handleSubmit,
     handleSelectThread,
+    beginNewThread,
     handlePlanDecision,
     startPlanEditing,
     cancelPlanEditing,
@@ -48,6 +50,34 @@ export default function Home() {
     resetPlanError,
     setInputValue,
   } = useResearchController();
+
+  const shouldShowReport = reportContent.markdown !== null || reportContent.fallback !== null;
+  const [isSidebarMinimized, setIsSidebarMinimized] = useState(false);
+  const previousReportVisibility = useRef(false);
+  const collapsedByReportRef = useRef(false);
+
+  const progressBadgeLabel = overallProgress
+    ? `${overallProgress.completed}/${overallProgress.total}`
+    : null;
+  const progressBadgeTitle = overallProgress
+    ? overallProgress.steps
+      .map((step, index) => `${step.done ? "[x]" : "[ ]"} ${index + 1}. ${step.label}`)
+      .join("\n")
+    : null;
+  const progressBadgeClassName = overallProgress
+    ? "inline-flex items-center gap-1 rounded-full border border-emerald-400/60 bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-100 shadow-[0_16px_30px_-28px_rgba(16,185,129,0.6)]"
+    : null;
+
+  useEffect(() => {
+    if (!previousReportVisibility.current && shouldShowReport) {
+      setIsSidebarMinimized(true);
+      collapsedByReportRef.current = true;
+    } else if (previousReportVisibility.current && !shouldShowReport && collapsedByReportRef.current) {
+      setIsSidebarMinimized(false);
+      collapsedByReportRef.current = false;
+    }
+    previousReportVisibility.current = shouldShowReport;
+  }, [shouldShowReport]);
 
   useEffect(() => {
     if (!chatScrollRef.current) {
@@ -71,38 +101,46 @@ export default function Home() {
   const headerSubtitle = selectedConversation
     ? null
     : "左の一覧からスレッドを選択するか、新しいリサーチを開始してください。";
-  const shouldShowReport = reportContent.markdown !== null || reportContent.fallback !== null;
+  const handleToggleSidebar = () => {
+    setIsSidebarMinimized((prev) => {
+      collapsedByReportRef.current = false;
+      return !prev;
+    });
+  };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-950 text-slate-100">
+    <div className="relative flex h-screen overflow-hidden text-slate-100">
+      <div className="pointer-events-none absolute inset-0 -z-10">
+        <div className="floating-pulse absolute -left-24 top-20 h-96 w-96 rounded-full bg-emerald-500/25 blur-3xl" />
+        <div className="absolute right-20 top-0 h-80 w-80 rounded-full bg-sky-500/25 blur-3xl" />
+        <div className="absolute bottom-0 left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-emerald-400/10 blur-3xl" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.08),transparent_55%)]" />
+      </div>
       <ConversationSidebar
         threadList={threadList}
         selectedThreadId={effectiveThreadId}
         healthStatus={healthStatus}
         onSelectThread={handleSelectThread}
-        onCreateThread={() => inputRef.current?.focus()}
+        onCreateThread={() => {
+          beginNewThread();
+          inputRef.current?.focus();
+        }}
+        isMinimized={isSidebarMinimized}
+        onToggleMinimize={handleToggleSidebar}
       />
-      <main className="flex flex-1 flex-col overflow-hidden">
+      <main className="glass-panel flex h-screen flex-1 flex-col overflow-hidden border-l border-slate-900/40 min-h-0">
         <ConversationHeader
           title={selectedConversation?.title ?? "Deep Research"}
           subtitle={headerSubtitle}
+          statusBadgeLabel={progressBadgeLabel}
+          statusBadgeClassName={progressBadgeClassName}
+          statusBadgeTitle={progressBadgeTitle}
           errorMessage={errorMessage}
+          progressSteps={overallProgress?.steps ?? null}
         />
-        <section ref={chatScrollRef} className="flex-1 overflow-y-auto px-6 py-6">
-          <div
-            className={mergeClassNames(
-              "flex w-full gap-6",
-              shouldShowReport
-                ? "flex-col lg:flex-row lg:items-start xl:mx-auto xl:max-w-6xl"
-                : "flex-col"
-            )}
-          >
-            <div
-              className={mergeClassNames(
-                "flex flex-1 flex-col gap-4",
-                shouldShowReport ? "min-w-0" : undefined
-              )}
-            >
+        <section ref={chatScrollRef} className="flex-1 overflow-y-auto px-8 py-8">
+          <div className="flex w-full flex-col gap-6 xl:mx-auto xl:max-w-6xl">
+            <div className="flex flex-1 flex-col gap-5">
               {currentInterrupt ? (
                 <Fragment key="interrupt">
                   <ChatTranscript
@@ -158,16 +196,14 @@ export default function Home() {
               {executionMessage ? <ExecutionIndicator message={executionMessage} /> : null}
             </div>
             {shouldShowReport ? (
-              <aside className="w-full flex-none lg:w-[420px]">
-                <div className="lg:sticky lg:top-24">
-                  <ResearchReportViewer
-                    markdownComponents={markdownComponents}
-                    markdown={reportContent.markdown}
-                    fallback={reportContent.fallback}
-                    className="w-full lg:max-w-none shadow-lg ring-1 ring-emerald-400/30"
-                  />
-                </div>
-              </aside>
+              <div className="flex justify-center">
+                <ResearchReportViewer
+                  markdownComponents={markdownComponents}
+                  markdown={reportContent.markdown}
+                  fallback={reportContent.fallback}
+                  className="w-full max-w-3xl"
+                />
+              </div>
             ) : null}
           </div>
         </section>

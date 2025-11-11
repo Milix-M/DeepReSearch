@@ -311,18 +311,27 @@ export function extractResearchInsight(
   return null;
 }
 
-export function buildInsightContent(insight: ResearchInsightState): string {
-  const blocks: string[] = [];
-  if (insight.currentPage) {
-    blocks.push(`調査中のページ\n${insight.currentPage}`);
+export function buildInsightContent(insight: ResearchInsightState): {
+  content: string;
+  reasoning?: string;
+} {
+  const sections: string[] = [];
+  const currentPage = insight.currentPage?.trim();
+  const reasoning = insight.reasoning?.trim();
+
+  if (currentPage) {
+    sections.push(`調査中のページ\n${currentPage}`);
   }
-  if (insight.reasoning) {
-    blocks.push(`LLMの思考\n${insight.reasoning}`);
-  }
-  if (blocks.length === 0) {
-    return "リサーチの進捗を記録しています。";
-  }
-  return blocks.join("\n\n");
+
+  const content = sections.length > 0
+    ? sections.join("\n\n")
+    : reasoning
+      ? "LLMの思考を更新しました。"
+      : "リサーチの進捗を記録しています。";
+
+  return reasoning
+    ? { content, reasoning }
+    : { content };
 }
 
 export function getRecordValue<T>(
