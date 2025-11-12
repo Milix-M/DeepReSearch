@@ -21,7 +21,10 @@ _DEFAULT_ALLOWED_ORIGINS = {
     "http://127.0.0.1:3000",
 }
 
-logger = logging.getLogger(__name__)
+# Uvicorn の標準エラーロガー配下にぶら下げて、Docker コンソールへ確実に流す。
+logger = logging.getLogger("uvicorn.error").getChild("deep_research.api")
+logger.setLevel(logging.INFO)
+logger.propagate = True
 
 
 def _resolve_allowed_origins() -> list[str]:
@@ -117,19 +120,33 @@ async def websocket_research(websocket: WebSocket) -> None:
 
     await websocket.accept()
     thread_id: str | None = None
+    close_reason = "initialized"
 
     try:
         initial_payload = await websocket.receive_json()
         query = (initial_payload.get("query") or "").strip()
         if not query:
+            logger.warning("WebSocket closing due to empty query payload")
+            close_reason = "invalid_query"
             await websocket.send_json({"type": "error", "message": "query が空です。"})
             await websocket.close(code=4000)
             return
 
         thread_id = workflow_service.create_thread_id()
+        logger.info(
+            "WebSocket session started [thread_id=%s, query=%s]",
+            thread_id,
+            query[:200],
+        )
         await websocket.send_json({"type": "thread_started", "thread_id": thread_id})
 
         async def forward_event(event: Dict[str, Any]) -> None:
+            event_name = event.get("event")
+            logger.debug(
+                "Forwarding workflow event [thread_id=%s, event=%s]",
+                thread_id,
+                event_name,
+            )
             await websocket.send_json(
                 {
                     "type": "event",
@@ -158,9 +175,17 @@ async def websocket_research(websocket: WebSocket) -> None:
             query=query,
             event_consumer=forward_event,
         )
+        logger.info(
+            "Workflow start completed [thread_id=%s, status=%s, events=%d, interrupt=%s]",
+            thread_id,
+            outcome.status,
+            len(outcome.events),
+            bool(outcome.interrupt),
+        )
 
         while True:
             if outcome.status == "completed":
+                logger.info("Thread completed [thread_id=%s]", thread_id)
                 await websocket.send_json(
                     {
                         "type": "complete",
@@ -168,11 +193,18 @@ async def websocket_research(websocket: WebSocket) -> None:
                         "state": outcome.state,
                     }
                 )
+                close_reason = "completed"
                 await websocket.close(code=1000)
                 return
 
             interrupt_payload = _interrupt_from_raw(outcome.interrupt)
             if not interrupt_payload:
+                logger.error(
+                    "Missing interrupt payload [thread_id=%s, status=%s]",
+                    thread_id,
+                    outcome.status,
+                )
+                close_reason = "missing_interrupt"
                 await websocket.send_json(
                     {
                         "type": "error",
@@ -183,6 +215,11 @@ async def websocket_research(websocket: WebSocket) -> None:
                 await websocket.close(code=1011)
                 return
 
+            logger.info(
+                "Interrupt dispatched [thread_id=%s, interrupt_id=%s]",
+                thread_id,
+                interrupt_payload.id,
+            )
             await websocket.send_json(
                 {
                     "type": "interrupt",
@@ -194,6 +231,11 @@ async def websocket_research(websocket: WebSocket) -> None:
             resume_payload = await websocket.receive_json()
             decision = (resume_payload.get("decision") or "").lower()
             if decision not in {"y", "n"}:
+                logger.warning(
+                    "Invalid decision received [thread_id=%s, decision=%s]",
+                    thread_id,
+                    resume_payload.get("decision"),
+                )
                 await websocket.send_json(
                     {
                         "type": "error",
@@ -204,17 +246,35 @@ async def websocket_research(websocket: WebSocket) -> None:
                 continue
 
             plan_update = resume_payload.get("plan")
+            logger.info(
+                "Resuming workflow [thread_id=%s, decision=%s, has_plan_update=%s]",
+                thread_id,
+                decision,
+                plan_update is not None,
+            )
             outcome = await workflow_service.resume_research(
                 thread_id=thread_id,
                 decision=decision,
                 plan_update=plan_update,
                 event_consumer=forward_event,
             )
+            logger.info(
+                "Workflow resumed [thread_id=%s, status=%s, events=%d, interrupt=%s]",
+                thread_id,
+                outcome.status,
+                len(outcome.events),
+                bool(outcome.interrupt),
+            )
 
     except WebSocketDisconnect:  # pragma: no cover - 切断時
+        close_reason = "client_disconnect"
+        logger.info("WebSocket disconnected by client [thread_id=%s]", thread_id)
         return
     except Exception as exc:  # pragma: no cover - 想定外エラー
-        logger.exception("Unhandled exception in websocket_research")
+        close_reason = f"exception:{exc.__class__.__name__}"
+        logger.exception(
+            "Unhandled exception in websocket_research [thread_id=%s]", thread_id
+        )
         if websocket.application_state == WebSocketState.CONNECTED:
             error_payload = {"type": "error", "message": str(exc)}
             if thread_id:
@@ -223,4 +283,15 @@ async def websocket_research(websocket: WebSocket) -> None:
             await websocket.close(code=1011)
     finally:
         if websocket.application_state == WebSocketState.CONNECTED:
+            logger.info(
+                "Closing WebSocket session [thread_id=%s, reason=%s]",
+                thread_id,
+                close_reason,
+            )
             await websocket.close(code=1000)
+        else:
+            logger.info(
+                "WebSocket session finalized [thread_id=%s, reason=%s]",
+                thread_id,
+                close_reason,
+            )
