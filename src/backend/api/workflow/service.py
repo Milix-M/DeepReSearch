@@ -11,7 +11,7 @@ from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, Optional
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command, Interrupt
 
-from backend.agent import OSSDeepResearchAgent
+from src.backend.agent import OSSDeepResearchAgent
 from .constants import DEFAULT_RECURSION_LIMIT, STREAM_VERSION
 from .errors import (
     HitlNotEnabledError,
