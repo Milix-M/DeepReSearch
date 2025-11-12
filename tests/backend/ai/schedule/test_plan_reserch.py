@@ -30,6 +30,7 @@ class DummyLLM:
 
 @pytest.mark.asyncio
 async def test_plan_research_ai_invocation():
+    """PlanResearchAI が構造化出力 LLM を通じて研究計画スキーマを生成することを検証するテスト。"""
     llm = DummyLLM()
     ai = PlanResearchAI(llm)
     result = await ai("題材")
@@ -40,6 +41,7 @@ async def test_plan_research_ai_invocation():
 
 
 def test_section_serialization_flags():
+    """研究計画に関連する各モデルが LangChain シリアライズ互換であることを検証するテスト。"""
     assert Section.is_lc_serializable()
     assert Structure.is_lc_serializable()
     assert ResearchPlan.is_lc_serializable()

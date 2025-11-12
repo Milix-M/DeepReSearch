@@ -30,6 +30,7 @@ class DummyLLM:
 
 @pytest.mark.asyncio
 async def test_query_analyze_ai_invokes_llm():
+    """QueryAnalyzeAI が LLM の構造化出力を利用して研究パラメータを生成することを検証するテスト。"""
     llm = DummyLLM()
     ai = QueryAnalyzeAI(llm)
     params = await ai("質問")
@@ -40,6 +41,7 @@ async def test_query_analyze_ai_invokes_llm():
 
 
 def test_research_parameters_validation():
+    """ResearchParameters のバリデーションが境界値とシリアライズ可否を判定することを検証するテスト。"""
     with pytest.raises(ValueError):
         ResearchParameters(
             search_queries_per_section=0,
