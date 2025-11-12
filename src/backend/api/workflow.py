@@ -6,7 +6,7 @@ import json
 import os
 import uuid
 from dataclasses import dataclass
-from typing import Any, AsyncGenerator, Callable, Dict, Optional
+from typing import Any, AsyncGenerator, Awaitable, Callable, Dict, Optional
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command, Interrupt
@@ -76,6 +76,7 @@ class WorkflowService:
         *,
         thread_id: str,
         query: str,
+        event_consumer: Callable[[Dict[str, Any]], Awaitable[None]] | None = None,
     ) -> RunOutcome:
         """ワークフローを開始し、必ずHITL割り込みポイントまで実行する。"""
 
@@ -86,6 +87,7 @@ class WorkflowService:
             thread_id=thread_id,
             auto_resume=False,
             interrupt_predicate=self._is_plan_edit_interrupt,
+            event_consumer=event_consumer,
         )
         self._record_post_run(thread_id, pending, finished)
         state = self._serialize_state(thread_id, snapshot)
@@ -101,6 +103,7 @@ class WorkflowService:
         thread_id: str,
         decision: str,
         plan_update: Any | None,
+        event_consumer: Callable[[Dict[str, Any]], Awaitable[None]] | None = None,
     ) -> RunOutcome:
         """保留中割り込みへの回答を用いてワークフローを再開する。"""
 
@@ -120,6 +123,7 @@ class WorkflowService:
             thread_id=thread_id,
             auto_resume=False,
             interrupt_predicate=self._is_plan_edit_interrupt,
+            event_consumer=event_consumer,
         )
         self._record_post_run(thread_id, next_pending, finished)
 
@@ -321,6 +325,7 @@ class WorkflowService:
         thread_id: str,
         auto_resume: bool,
         interrupt_predicate: Callable[[Interrupt], bool] | None = None,
+        event_consumer: Callable[[Dict[str, Any]], Awaitable[None]] | None = None,
     ) -> tuple[list[Dict[str, Any]], Optional[Interrupt], bool, Any | None]:
         config = self._graph_config(thread_id)
         current_payload: Any = payload
@@ -331,7 +336,10 @@ class WorkflowService:
             async for event in self._graph.astream_events(
                 current_payload, config=config, version=_STREAM_VERSION
             ):
-                collected_events.append(self._sanitize_event(event))
+                sanitized = self._sanitize_event(event)
+                if event_consumer:
+                    await event_consumer(sanitized)
+                collected_events.append(sanitized)
                 pending = self._extract_interrupt(event)
                 if pending:
                     break
