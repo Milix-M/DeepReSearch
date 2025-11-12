@@ -12,8 +12,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.websockets import WebSocketState
 
 from .schemas import HealthResponse, InterruptPayload, StateResponse, ThreadListResponse
-from .workflow import StateNotFoundError, workflow_service
+from .workflow import StateNotFoundError, WorkflowService
 
+workflow_service = WorkflowService()
 app = FastAPI(title="Deep Research API", version="1.0.0")
 
 _DEFAULT_ALLOWED_ORIGINS = {
@@ -28,9 +29,14 @@ logger.propagate = True
 
 
 def _resolve_allowed_origins() -> list[str]:
-    """CORS許可オリジンを環境変数から解決する。"""
+    """CORS許可オリジンを環境変数から解決する。
+
+    Returns:
+        list[str]: 許可するオリジンのリスト。環境変数が未設定の場合はデフォルト値を返す。
+    """
 
     raw_value = os.getenv("CORS_ALLOW_ORIGINS", "")
+    # 環境変数はカンマ区切りを想定、空要素を除外しつつ整理
     candidates = [origin.strip() for origin in raw_value.split(",") if origin.strip()]
     if candidates:
         return candidates
@@ -47,12 +53,28 @@ app.add_middleware(
 
 
 def _interrupt_from_raw(raw: Dict[str, Any] | None) -> InterruptPayload | None:
+    """未加工データから割り込みペイロードを生成する。
+
+    Args:
+        raw (Dict[str, Any] | None): ワークフローから返された割り込みデータ。
+
+    Returns:
+        InterruptPayload | None: バリデーションに成功した割り込みペイロード。入力が不正な場合は `None`。
+    """
     if not raw:
         return None
     return InterruptPayload.model_validate(raw)
 
 
 def _extract_event_error_message(event: Dict[str, Any]) -> str:
+    """イベントペイロードから代表的なエラーメッセージを抽出する。
+
+    Args:
+        event (Dict[str, Any]): ワークフローから受け取ったイベントペイロード。
+
+    Returns:
+        str: 抽出したエラーメッセージ。候補が存在しない場合は汎用的なメッセージを返す。
+    """
     message = event.get("message")
     if isinstance(message, str) and message:
         return message
@@ -69,7 +91,11 @@ def _extract_event_error_message(event: Dict[str, Any]) -> str:
 
 @app.get("/healthz", response_model=HealthResponse, tags=["system"])
 async def healthcheck() -> HealthResponse:
-    """システムの稼働状況を返すヘルスチェック。"""
+    """システムの稼働状況を返すヘルスチェック。
+
+    Returns:
+        HealthResponse: システムステータスと診断情報を含むレスポンス。
+    """
 
     diagnostics = workflow_service.diagnostics()
     return HealthResponse(
@@ -81,7 +107,11 @@ async def healthcheck() -> HealthResponse:
 
 @app.get("/threads", response_model=ThreadListResponse, tags=["workflow"])
 async def list_threads() -> ThreadListResponse:
-    """アクティブなスレッドおよび割り込み待ちスレッドの一覧を返す。"""
+    """アクティブなスレッドおよび割り込み待ちスレッドの一覧を返す。
+
+    Returns:
+        ThreadListResponse: スレッドIDと件数を含むレスポンスデータ。
+    """
 
     active = workflow_service.list_active_threads()
     pending = workflow_service.list_pending_interrupts()
@@ -99,7 +129,17 @@ async def list_threads() -> ThreadListResponse:
     tags=["workflow"],
 )
 async def get_thread_state(thread_id: str) -> StateResponse:
-    """スレッドの最新状態スナップショットを取得する。"""
+    """スレッドの最新状態スナップショットを取得する。
+
+    Args:
+        thread_id (str): 状態を取得したいスレッドID。
+
+    Returns:
+        StateResponse: スレッドのステータス、状態、割り込み情報を含むレスポンス。
+
+    Raises:
+        HTTPException: スレッドが見つからない場合に ``404`` を投げる。
+    """
 
     try:
         snapshot = workflow_service.get_state(thread_id)
@@ -116,13 +156,26 @@ async def get_thread_state(thread_id: str) -> StateResponse:
 
 @app.websocket("/ws/research")
 async def websocket_research(websocket: WebSocket) -> None:
-    """WebSocket経由でHITL対応のリサーチ実行を提供する。"""
+    """WebSocket経由でHITL対応のリサーチ実行を提供する。
 
+    Args:
+        websocket (WebSocket): クライアント接続を表すWebSocketインスタンス。
+
+    Returns:
+        None: このエンドポイントはレスポンスボディを返さない。
+
+    Raises:
+        WebSocketDisconnect: クライアント切断時に内部的に発生する。
+        Exception: 想定外のエラーが発生した場合に送信し、接続を終了する。
+    """
+
+    # WebSocket接続を確立し、スレッドIDを後続処理で共有する。
     await websocket.accept()
     thread_id: str | None = None
     close_reason = "initialized"
 
     try:
+        # クライアントから初期クエリを受信し、空文字列でないことを確認する。
         initial_payload = await websocket.receive_json()
         query = (initial_payload.get("query") or "").strip()
         if not query:
@@ -132,6 +185,7 @@ async def websocket_research(websocket: WebSocket) -> None:
             await websocket.close(code=4000)
             return
 
+        # 新しいスレッドを生成し、クライアントへ開始イベントを通知する。
         thread_id = workflow_service.create_thread_id()
         logger.info(
             "WebSocket session started [thread_id=%s, query=%s]",
@@ -141,6 +195,7 @@ async def websocket_research(websocket: WebSocket) -> None:
         await websocket.send_json({"type": "thread_started", "thread_id": thread_id})
 
         async def forward_event(event: Dict[str, Any]) -> None:
+            # ワークフローからのイベントをそのままフロントに中継する。
             event_name = event.get("event")
             logger.debug(
                 "Forwarding workflow event [thread_id=%s, event=%s]",
@@ -170,6 +225,7 @@ async def websocket_research(websocket: WebSocket) -> None:
                     }
                 )
 
+        # ワークフローを開始し、最初の割り込みまたは完了まで待機する。
         outcome = await workflow_service.start_research(
             thread_id=thread_id,
             query=query,
@@ -228,6 +284,7 @@ async def websocket_research(websocket: WebSocket) -> None:
                 }
             )
 
+            # クライアント側の意思決定を待ち、承認または再計画を処理する。
             resume_payload = await websocket.receive_json()
             decision = (resume_payload.get("decision") or "").lower()
             if decision not in {"y", "n"}:
