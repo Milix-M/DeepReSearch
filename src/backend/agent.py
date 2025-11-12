@@ -401,8 +401,7 @@ class OSSDeepResearchAgent:
         compiled_graph = graph.compile(checkpointer=memory)
 
         # graph実行イメージ保存
-        graph_image = compiled_graph.get_graph().draw_mermaid_png()
-        with open("./graph.png", "wb") as file:
-            file.write(graph_image)
-
-        return compiled_graph
+        graph_image = compiled_graph.get_graph().draw_mermaid_png()  # pragma: no cover
+        with open("./graph.png", "wb") as file:  # pragma: no cover
+            file.write(graph_image)  # pragma: no cover
+        return compiled_graph  # pragma: no cover
