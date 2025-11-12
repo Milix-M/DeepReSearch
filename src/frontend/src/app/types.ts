@@ -14,6 +14,7 @@ export interface ChatMessage {
   title?: string;
   content: string;
   createdAt: number;
+  reasoning?: string;
 }
 
 export interface ResearchInsightState {
