@@ -11,3 +11,5 @@ htmlcov/
 
 # Virtual environments
 .venv
+
+graph.png
