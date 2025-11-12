@@ -23,7 +23,6 @@ from src.backend.ai.analyze.query_analyze import QueryAnalyzeAI, ResearchParamet
 from src.backend.ai.reflect.reflect_search_result import ReflectionResultSchema
 from src.backend.ai.schedule.plan_reserch import GeneratedObjectSchema, PlanResearchAI
 from src.backend.ai.search.prompt import DEEP_RESEARCH_SYSTEM_PROMPT
-from src.backend.tools.get_current_date import get_current_date
 from src.backend.tools.search_reflect import reflect_on_results
 from src.backend.tools.web_research import web_research
 
@@ -131,7 +130,7 @@ class OSSDeepResearchAgent:
     def __init__(self) -> None:
         """エージェントを初期化する。"""
         # 使用するツール
-        self.tools = [web_research, reflect_on_results, get_current_date]
+        self.tools = [web_research, reflect_on_results]
 
         self.llm = ChatOpenAI(
             model="tngtech/deepseek-r1t2-chimera:free",
@@ -173,7 +172,7 @@ class OSSDeepResearchAgent:
 
         Args:
             state (State): 現在のステート。
-            config (RunnableConfig): LangGraph 実行時の設定。
+            config (RunnableConfig): LangGraph実行時の設定。
 
         Returns:
             dict[str, ResearchParameters]: 生成した研究パラメータを含む差分ステート。
@@ -189,7 +188,7 @@ class OSSDeepResearchAgent:
 
         Args:
             state (State): 現在のステート。
-            config (RunnableConfig): LangGraph 実行時の設定。
+            config (RunnableConfig): LangGraph実行時の設定。
 
         Returns:
             dict[str, GeneratedObjectSchema]: 研究計画を含む差分ステート。
@@ -203,7 +202,7 @@ class OSSDeepResearchAgent:
 
         Args:
             state (State): 現在のステート。
-            config (RunnableConfig): LangGraph 実行時の設定。
+            config (RunnableConfig): LangGraph実行時の設定。
 
         Returns:
             State: 判定結果を反映したステート。
@@ -243,7 +242,7 @@ class OSSDeepResearchAgent:
 
         Args:
             state (State): 現在のステート。
-            config (RunnableConfig): ランググラフ実行時の設定。
+            config (RunnableConfig): LangGraph実行時の設定。
 
         Returns:
             dict[str, list]: LLM 応答を追記したメッセージ差分。
