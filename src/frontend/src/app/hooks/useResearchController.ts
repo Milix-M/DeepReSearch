@@ -15,21 +15,21 @@ import type {
 import type {
   ChatMessage,
   ConversationMeta,
-  ConversationStatus,
-  ResearchInsightState,
   ResearchPlanFormState,
 } from "../types";
 import {
-  buildInsightContent,
   describeEventStatus,
   extractEventDetails,
   extractResearchInsight,
   formatInterruptContent,
   getRecordValue,
   humanizeIdentifier,
-  makeThreadTitle,
   normalizeReportContent,
 } from "../utils/chat-helpers";
+import { INTERRUPT_MESSAGE_PREFIX } from "./research-controller/constants";
+import { nextMessageId } from "./research-controller/messageId";
+import { useMessageManager } from "./research-controller/useMessageManager";
+import { useThreadRegistry } from "./research-controller/useThreadRegistry";
 import {
   clonePlanForm,
   createEmptyPlanForm,
@@ -38,10 +38,6 @@ import {
   serializePlanForm,
   validatePlanForm,
 } from "../utils/plan-form";
-
-const THREAD_TITLE_STORAGE_KEY = "deep-research:thread-titles";
-const INSIGHT_MESSAGE_PREFIX = "insight-log-";
-const INTERRUPT_MESSAGE_PREFIX = "interrupt-";
 
 interface ResearchControllerResult {
   threadList: ConversationMeta[];
@@ -81,56 +77,30 @@ interface ResearchControllerResult {
   setInputValue: (value: string) => void;
 }
 
-function loadThreadTitlesFromStorage(): Record<string, string> {
-  if (typeof window === "undefined") {
-    return {};
-  }
-
-  try {
-    const stored = window.localStorage.getItem(THREAD_TITLE_STORAGE_KEY);
-    if (!stored) {
-      return {};
-    }
-
-    const parsed = JSON.parse(stored);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return Object.entries(parsed as Record<string, unknown>).reduce<Record<string, string>>(
-        (acc, [key, value]) => {
-          if (typeof value === "string") {
-            const trimmed = value.trim();
-            if (trimmed.length > 0) {
-              acc[key] = trimmed;
-            }
-          }
-          return acc;
-        },
-        {}
-      );
-    }
-  } catch (error) {
-    console.warn("[ui] Failed to load thread titles from storage", error);
-  }
-
-  return {};
-}
-
-let messageCounter = 0;
-
-function nextMessageId(prefix: string): string {
-  messageCounter += 1;
-  return `${prefix}-${Date.now()}-${messageCounter}`;
-}
-
 export function useResearchController(): ResearchControllerResult {
   const socketRef = useRef<WebSocket | null>(null);
   const pendingQueryRef = useRef<string>("");
   const activeThreadRef = useRef<string | null>(null);
 
-  const [conversations, setConversations] = useState<Record<string, ConversationMeta>>({});
-  const [messagesByThread, setMessagesByThread] = useState<Record<string, ChatMessage[]>>({});
+  const {
+    conversations,
+    threadList,
+    activeThreadId,
+    setActiveThreadId,
+    effectiveThreadId,
+    isDraftingNewThread,
+    setIsDraftingNewThread,
+    ensureConversation,
+    resolveConversationTitle,
+    mutateConversations,
+    touchConversation,
+  } = useThreadRegistry();
+
+  const { messagesByThread, appendMessage, handleInsightDelta, resetInsight } =
+    useMessageManager({ touchConversation });
+
   const [pendingInterrupts, setPendingInterrupts] = useState<Record<string, InterruptPayload | null>>({});
   const [threadStates, setThreadStates] = useState<Record<string, ThreadStateResponse>>({});
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [inputValue, setInputValueState] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -139,26 +109,6 @@ export function useResearchController(): ResearchControllerResult {
   const [planError, setPlanError] = useState<string | null>(null);
   const [healthStatus, setHealthStatus] = useState<"loading" | "ok" | "error">("loading");
   const [activeSteps, setActiveSteps] = useState<Record<string, string>>({});
-  const [isDraftingNewThread, setIsDraftingNewThread] = useState(false);
-  const [threadTitles, setThreadTitles] = useState<Record<string, string>>(() =>
-    loadThreadTitlesFromStorage()
-  );
-  const threadTitlesRef = useRef<Record<string, string>>(threadTitles);
-  const [, setInsights] = useState<Record<string, ResearchInsightState>>({});
-
-  const threadList = useMemo(
-    () =>
-      Object.values(conversations).sort(
-        (a, b) => b.lastUpdated - a.lastUpdated
-      ),
-    [conversations]
-  );
-  const effectiveThreadId = useMemo(() => {
-    if (isDraftingNewThread) {
-      return null;
-    }
-    return activeThreadId ?? (threadList.length > 0 ? threadList[0].id : null);
-  }, [activeThreadId, isDraftingNewThread, threadList]);
 
   const selectedConversation = effectiveThreadId ? conversations[effectiveThreadId] : undefined;
   const selectedMessages = effectiveThreadId ? messagesByThread[effectiveThreadId] ?? [] : [];
@@ -166,45 +116,6 @@ export function useResearchController(): ResearchControllerResult {
   const currentInterrupt = effectiveThreadId ? pendingInterrupts[effectiveThreadId] ?? null : null;
   const activePlanForm = effectiveThreadId ? planForms[effectiveThreadId] ?? null : null;
   const editablePlan = activePlanForm ?? createEmptyPlanForm();
-
-  useEffect(() => {
-    threadTitlesRef.current = threadTitles;
-  }, [threadTitles]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    try {
-      window.localStorage.setItem(THREAD_TITLE_STORAGE_KEY, JSON.stringify(threadTitles));
-    } catch (error) {
-      console.warn("[ui] Failed to persist thread titles", error);
-    }
-  }, [threadTitles]);
-
-  const rememberTitle = useCallback((threadId: string, rawTitle: string) => {
-    const trimmed = rawTitle.trim();
-    if (!trimmed) {
-      return;
-    }
-    setThreadTitles((prev) => {
-      if (prev[threadId] === trimmed) {
-        return prev;
-      }
-      return { ...prev, [threadId]: trimmed };
-    });
-  }, []);
-
-  const resolveConversationTitle = useCallback(
-    (threadId: string, rawTitle?: string) => {
-      const candidate = rawTitle?.trim() || threadTitlesRef.current[threadId] || "";
-      if (candidate) {
-        return makeThreadTitle(candidate, threadId);
-      }
-      return makeThreadTitle(undefined, threadId);
-    },
-    []
-  );
 
   const refreshThreadState = useCallback(async (threadId: string) => {
     try {
@@ -217,123 +128,6 @@ export function useResearchController(): ResearchControllerResult {
     }
   }, []);
 
-  const applyInsightMessage = useCallback(
-    (threadId: string, insight: ResearchInsightState | null) => {
-      const messageId = `${INSIGHT_MESSAGE_PREFIX}${threadId}`;
-      const timestamp = insight?.lastUpdated ?? Date.now();
-
-      setMessagesByThread((prev) => {
-        const currentMessages = prev[threadId] ?? [];
-        const insightIndex = currentMessages.findIndex((message) => message.id === messageId);
-
-        if (!insight || (!insight.currentPage && !insight.reasoning)) {
-          if (insightIndex === -1) {
-            return prev;
-          }
-          const nextMessages = [...currentMessages];
-          nextMessages.splice(insightIndex, 1);
-          return { ...prev, [threadId]: nextMessages };
-        }
-
-        const insightDisplay = buildInsightContent(insight);
-        const nextMessage: ChatMessage = {
-          id: messageId,
-          role: "assistant",
-          title: "リサーチ進行状況",
-          content: insightDisplay.content,
-          reasoning: insightDisplay.reasoning,
-          createdAt: timestamp,
-        };
-
-        const nextMessages =
-          insightIndex === -1
-            ? [...currentMessages, nextMessage]
-            : currentMessages.map((message, index) =>
-                index === insightIndex ? nextMessage : message
-              );
-
-        return { ...prev, [threadId]: nextMessages };
-      });
-
-      if (insight && (insight.currentPage || insight.reasoning)) {
-        setConversations((prev) => {
-          const existing = prev[threadId];
-          if (!existing || existing.lastUpdated >= timestamp) {
-            return prev;
-          }
-          return {
-            ...prev,
-            [threadId]: { ...existing, lastUpdated: timestamp },
-          };
-        });
-      }
-    },
-    []
-  );
-
-  const appendMessage = useCallback((threadId: string, message: ChatMessage) => {
-    let didAppend = false;
-    setMessagesByThread((prev) => {
-      const currentMessages = prev[threadId] ?? [];
-      const lastMessage = currentMessages[currentMessages.length - 1];
-      if (
-        lastMessage &&
-        lastMessage.role === message.role &&
-        lastMessage.title === message.title &&
-        lastMessage.content === message.content
-      ) {
-        return prev;
-      }
-      didAppend = true;
-      const nextMessages = [...currentMessages, message];
-      return { ...prev, [threadId]: nextMessages };
-    });
-    if (didAppend) {
-      setConversations((prev) => {
-        const existing = prev[threadId];
-        if (!existing) {
-          return prev;
-        }
-        return {
-          ...prev,
-          [threadId]: { ...existing, lastUpdated: message.createdAt },
-        };
-      });
-    }
-  }, []);
-
-  const ensureConversation = useCallback(
-    (threadId: string, rawTitle: string | undefined, status: ConversationStatus) => {
-      const now = Date.now();
-      if (rawTitle) {
-        rememberTitle(threadId, rawTitle);
-      }
-      const displayTitle = resolveConversationTitle(threadId, rawTitle);
-      setConversations((prev) => {
-        const existing = prev[threadId];
-        const conversation: ConversationMeta = existing
-          ? {
-              ...existing,
-              title: displayTitle,
-              status:
-                existing.status === "completed" && status !== "completed"
-                  ? existing.status
-                  : status,
-              lastUpdated: now,
-            }
-          : {
-              id: threadId,
-              title: displayTitle,
-              status,
-              startedAt: now,
-              lastUpdated: now,
-            };
-        return { ...prev, [threadId]: conversation };
-      });
-    },
-    [rememberTitle, resolveConversationTitle]
-  );
-
   useEffect(() => {
     let cancelled = false;
     apiClient
@@ -343,7 +137,7 @@ export function useResearchController(): ResearchControllerResult {
           setHealthStatus("ok");
         }
       })
-  .catch((error: unknown) => {
+      .catch((error: unknown) => {
         console.error("[ui] health check failed", error);
         if (!cancelled) {
           setHealthStatus("error");
@@ -360,17 +154,17 @@ export function useResearchController(): ResearchControllerResult {
 
     const syncThreads = async () => {
       try {
-  const listing: ThreadListResponse = await apiClient.listThreads();
+        const listing: ThreadListResponse = await apiClient.listThreads();
         if (cancelled) {
           return;
         }
         setErrorMessage((prev) => (prev === "APIへの接続に失敗しました。" ? null : prev));
 
-        setConversations((prev) => {
+        mutateConversations((prev) => {
           const now = Date.now();
           const next: Record<string, ConversationMeta> = { ...prev };
 
-          const updateStatus = (id: string, status: ConversationStatus) => {
+          const updateStatus = (id: string, status: ConversationMeta["status"]) => {
             const existing = next[id];
             const title = resolveConversationTitle(id);
             if (existing) {
@@ -422,7 +216,7 @@ export function useResearchController(): ResearchControllerResult {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [refreshThreadState, resolveConversationTitle]);
+  }, [mutateConversations, refreshThreadState, resolveConversationTitle]);
 
   useEffect(
     () => () => {
@@ -495,15 +289,7 @@ export function useResearchController(): ResearchControllerResult {
               ...prev,
               [message.thread_id]: "調査計画を作成しています...",
             }));
-            setInsights((prev) => {
-              if (!prev[message.thread_id]) {
-                return prev;
-              }
-              const next = { ...prev };
-              delete next[message.thread_id];
-              return next;
-            });
-            applyInsightMessage(message.thread_id, null);
+            resetInsight(message.thread_id);
             return;
           }
 
@@ -534,50 +320,7 @@ export function useResearchController(): ResearchControllerResult {
 
             const insightDelta = extractResearchInsight(message.payload);
             if (insightDelta) {
-              let updatedInsight: ResearchInsightState | null | undefined;
-              setInsights((prev) => {
-                const current = prev[threadId];
-                const now = Date.now();
-
-                const nextInsight: ResearchInsightState = {
-                  currentPage:
-                    insightDelta.currentPage !== undefined
-                      ? insightDelta.currentPage
-                      : current?.currentPage,
-                  reasoning:
-                    insightDelta.reasoning !== undefined
-                      ? insightDelta.reasoning
-                      : current?.reasoning,
-                  lastUpdated: now,
-                };
-
-                const shouldRemove = !nextInsight.currentPage && !nextInsight.reasoning;
-                if (shouldRemove) {
-                  if (!current) {
-                    updatedInsight = undefined;
-                    return prev;
-                  }
-                  const next = { ...prev };
-                  delete next[threadId];
-                  updatedInsight = null;
-                  return next;
-                }
-
-                if (
-                  current &&
-                  current.currentPage === nextInsight.currentPage &&
-                  current.reasoning === nextInsight.reasoning
-                ) {
-                  updatedInsight = undefined;
-                  return prev;
-                }
-
-                updatedInsight = nextInsight;
-                return { ...prev, [threadId]: nextInsight };
-              });
-              if (updatedInsight !== undefined) {
-                applyInsightMessage(threadId, updatedInsight ?? null);
-              }
+              handleInsightDelta(threadId, insightDelta);
             }
 
             if (
@@ -719,7 +462,7 @@ export function useResearchController(): ResearchControllerResult {
 
       socketRef.current = socket;
     },
-    [appendMessage, applyInsightMessage, ensureConversation, inputValue, isConnecting, refreshThreadState]
+    [appendMessage, ensureConversation, handleInsightDelta, inputValue, isConnecting, refreshThreadState, resetInsight]
   );
 
   const handleSelectThread = useCallback(
