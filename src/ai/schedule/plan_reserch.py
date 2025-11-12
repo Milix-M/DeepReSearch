@@ -1,4 +1,5 @@
-from pydantic import BaseModel, Field
+from langchain_core.load.serializable import Serializable
+from pydantic import Field
 
 from .prompt import SCHDULE_AI_SYSTEM_PROMPT
 
@@ -25,7 +26,7 @@ Examples:
 """
 
 
-class Section(BaseModel):
+class Section(Serializable):
     """研究計画内の単一セクションを表すデータモデル。
 
     Attributes:
@@ -38,8 +39,12 @@ class Section(BaseModel):
     focus: str = Field(description="このセクションの焦点")
     key_questions: list[str] = Field(description="このセクションで探求すべき主要な質問")
 
+    @classmethod
+    def is_lc_serializable(cls) -> bool:
+        return True
 
-class Structure(BaseModel):
+
+class Structure(Serializable):
     """ドキュメント全体の導入と結論（要約）を保持するモデル。
 
     Attributes:
@@ -50,8 +55,12 @@ class Structure(BaseModel):
     introduction: str = Field(description="イントロダクションの概要")
     conclusion: str = Field(description="結論の概要")
 
+    @classmethod
+    def is_lc_serializable(cls) -> bool:
+        return True
 
-class ResearchPlan(BaseModel):
+
+class ResearchPlan(Serializable):
     """研究計画全体を表すモデル。
 
     Attributes:
@@ -64,8 +73,12 @@ class ResearchPlan(BaseModel):
     sections: list[Section]
     structure: Structure
 
+    @classmethod
+    def is_lc_serializable(cls) -> bool:
+        return True
 
-class GeneratedObjectSchema(BaseModel):
+
+class GeneratedObjectSchema(Serializable):
     """LLM の構造化出力がこのスキーマにマッチすることを期待する。
 
     Attributes:
@@ -75,6 +88,10 @@ class GeneratedObjectSchema(BaseModel):
 
     research_plan: ResearchPlan
     meta_analysis: str = Field(description="計画に関する分析と推奨事項")
+
+    @classmethod
+    def is_lc_serializable(cls) -> bool:
+        return True
 
 
 class PlanResearchAI:
