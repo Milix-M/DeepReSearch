@@ -5,20 +5,33 @@ interface ResearchReportViewerProps {
   markdownComponents: Components;
   markdown?: string | null;
   fallback?: string | null;
+  className?: string;
 }
 
-export function ResearchReportViewer({ markdownComponents, markdown, fallback }: ResearchReportViewerProps) {
+export function ResearchReportViewer({
+  markdownComponents,
+  markdown,
+  fallback,
+  className,
+}: ResearchReportViewerProps) {
+  const containerClassName = [
+    "max-w-3xl rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-5",
+    className,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div className="max-w-3xl rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-5">
+    <div className={containerClassName}>
       <h3 className="text-sm font-semibold text-emerald-200">レポート</h3>
       {markdown ? (
         <div className="mt-3 space-y-4 rounded-xl bg-slate-950/60 px-4 py-3 text-sm text-emerald-100">
           <ReactMarkdown components={markdownComponents}>{markdown}</ReactMarkdown>
         </div>
       ) : fallback ? (
-        <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950/60 px-4 py-3 text-xs text-emerald-100">
-          {fallback}
-        </pre>
+        <div className="mt-3 space-y-4 rounded-xl bg-slate-950/60 px-4 py-3 text-sm text-emerald-100">
+          <ReactMarkdown components={markdownComponents}>{fallback}</ReactMarkdown>
+        </div>
       ) : (
         <p className="mt-3 text-sm text-emerald-100/70">レポート内容がまだ整形されていません。</p>
       )}
