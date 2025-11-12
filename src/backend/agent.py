@@ -208,7 +208,7 @@ class OSSDeepResearchAgent:
         Returns:
             State: 判定結果を反映したステート。
         """
-        feedback = interrupt("編集しますか？ y or n: ")
+        feedback = interrupt("調査計画を編集しますか？")
         if feedback == "y":
             state.research_plan_human_edit = True
 
@@ -296,9 +296,10 @@ class OSSDeepResearchAgent:
         params = state.research_parameters
 
         assert params
+        assert plan
 
         # 2. システムプロンプトをフォーマット
-        formatted_plan = str(plan)
+        formatted_plan = plan.model_dump()
         final_prompt_text = DEEP_RESEARCH_SYSTEM_PROMPT.format(
             SEARCH_PLAN=formatted_plan,
             SEARCH_QUERIES_PER_SECTION=params.search_queries_per_section,
