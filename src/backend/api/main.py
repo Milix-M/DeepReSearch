@@ -323,11 +323,11 @@ async def websocket_research(websocket: WebSocket) -> None:
                 bool(outcome.interrupt),
             )
 
-    except WebSocketDisconnect:  # pragma: no cover - 切断時
+    except WebSocketDisconnect:
         close_reason = "client_disconnect"
         logger.info("WebSocket disconnected by client [thread_id=%s]", thread_id)
         return
-    except Exception as exc:  # pragma: no cover - 想定外エラー
+    except Exception as exc:
         close_reason = f"exception:{exc.__class__.__name__}"
         logger.exception(
             "Unhandled exception in websocket_research [thread_id=%s]", thread_id
