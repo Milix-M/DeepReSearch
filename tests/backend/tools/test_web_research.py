@@ -29,6 +29,11 @@ def patch_ddgs(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_web_research_collects_results(patch_ddgs):
+    """web_research ツールが DuckDuckGo からの結果を整形して収集することを検証するテスト。
+
+    Args:
+        patch_ddgs (DummyDDGS): モンキーパッチで差し替えた検索クライアント。
+    """
     results = web_research_module.web_research.invoke({"query": "test"})
     assert results[0]["title"] == "title"
     assert results[1]["snippet"] == ""

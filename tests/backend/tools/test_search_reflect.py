@@ -34,6 +34,7 @@ def patch_dependencies(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_reflect_on_results_returns_augmented_payload():
+    """reflect_on_results ツールが AI の出力を元の検索結果に付加することを検証するテスト。"""
     payload = search_reflect.reflect_on_results.invoke(
         {
             "query": "q",

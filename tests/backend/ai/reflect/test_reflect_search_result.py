@@ -41,17 +41,23 @@ class DummyLLM:
 
 
 def test_structures_are_lc_serializable():
+    """反省結果スキーマの各モデルが LangChain シリアライズ互換であることを検証するテスト。"""
     assert KeyInsight.is_lc_serializable()
     assert ImprovedQuery.is_lc_serializable()
     assert ReflectionResultSchema.is_lc_serializable()
 
 
 def test_reflection_ai_invokes_structured_llm(monkeypatch):
+    """SearchResultAnalyzeAndReflectAI が構造化出力 LLM を呼び出して結果を整形することを検証するテスト。
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): システムプロンプトを差し替えて入力テンプレートを固定するフィクスチャ。
+    """
     llm = DummyLLM()
     monkeypatch.setattr(
         module,
         "SEARCH_RESULT_ANALYZE_AND_REFLECTION_SYSTEM_PROMPT",
-        "{result}",
+        "{query}:{results}",
     )
     ai = SearchResultAnalyzeAndReflectAI(llm)
     result = ai("query", "result")

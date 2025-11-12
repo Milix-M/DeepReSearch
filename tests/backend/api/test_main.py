@@ -1,45 +1,68 @@
-import asyncio
 import os
+from dataclasses import dataclass
 from types import SimpleNamespace
+
+os.environ.setdefault("OPENROUTER_API_KEY", "test")
+os.environ.setdefault("OPENAI_API_KEY", "test")
 
 import pytest
 from fastapi.testclient import TestClient
-from starlette.websockets import WebSocketDisconnect
-
-os.environ.setdefault("OPENAI_API_KEY", "test")
-os.environ.setdefault("OPENROUTER_API_KEY", "test")
-os.environ.setdefault("ANTHROPIC_API_KEY", "test")
-os.environ.setdefault("GOOGLE_API_KEY", "test")
+from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from src.backend.api import main
 from src.backend.api.workflow import StateNotFoundError
 
 
-class StubWorkflowService:
-    def __init__(self):
-        self.outcomes: list[SimpleNamespace] = []
-        self.resume_calls: list[tuple[str, str, object | None]] = []
-        self.start_calls: list[tuple[str, str]] = []
+@dataclass
+class Script:
+    events: list[dict]
+    outcome: SimpleNamespace
 
-    def diagnostics(self):
+
+class StubWorkflowService:
+
+    def __init__(self):
+        self.start_scripts: list[Script] = []
+        self.resume_scripts: list[Script] = []
+        self.start_calls: list[tuple[str, str]] = []
+        self.resume_calls: list[tuple[str, str, object | None]] = []
+        self.created = 0
+
+    def diagnostics(self) -> dict:
         return {"ok": True}
 
-    def list_active_threads(self):
-        return ["thread-1"]
+    def list_active_threads(self) -> list[str]:
+        return ["thread-a"]
 
-    def list_pending_interrupts(self):
-        return ["thread-1"]
+    def list_pending_interrupts(self) -> list[str]:
+        return ["thread-a"]
 
-    def create_thread_id(self):
-        return "thread-generated"
+    def create_thread_id(self) -> str:
+        self.created += 1
+        return f"thread-{self.created}"
 
-    async def start_research(self, *, thread_id: str, query: str):
+    async def start_research(self, *, thread_id: str, query: str, event_consumer=None):
         self.start_calls.append((thread_id, query))
-        return self.outcomes.pop(0)
+        script = self.start_scripts.pop(0)
+        if event_consumer:
+            for event in script.events:
+                await event_consumer(event)
+        return script.outcome
 
-    async def resume_research(self, *, thread_id: str, decision: str, plan_update):
+    async def resume_research(
+        self,
+        *,
+        thread_id: str,
+        decision: str,
+        plan_update,
+        event_consumer=None,
+    ):
         self.resume_calls.append((thread_id, decision, plan_update))
-        return self.outcomes.pop(0)
+        script = self.resume_scripts.pop(0)
+        if event_consumer:
+            for event in script.events:
+                await event_consumer(event)
+        return script.outcome
 
     def get_state(self, thread_id: str):
         if thread_id == "missing":
@@ -59,6 +82,11 @@ def client(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_resolve_allowed_origins(monkeypatch: pytest.MonkeyPatch):
+    """CORS 設定の環境変数を解析し、期待した既定値を返すことを検証するテスト。
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): 環境変数を操作して分岐を切り替えるフィクスチャ。
+    """
     monkeypatch.setenv("CORS_ALLOW_ORIGINS", "https://a, https://b")
     assert main._resolve_allowed_origins() == ["https://a", "https://b"]
 
@@ -67,100 +95,134 @@ def test_resolve_allowed_origins(monkeypatch: pytest.MonkeyPatch):
     assert "http://localhost:3000" in defaults
 
 
-@pytest.mark.asyncio
-async def test_send_ws_events():
-    class StubWebSocket:
-        def __init__(self):
-            self.sent = []
-
-        async def send_json(self, payload):
-            self.sent.append(payload)
-
-    websocket = StubWebSocket()
-    events = [{"event": "alpha"}, {"event": "beta"}]
-    await main._send_ws_events(websocket, "thread", events)  # type: ignore[arg-type]
-
-    assert websocket.sent[0]["thread_id"] == "thread"
-    assert websocket.sent[1]["payload"]["event"] == "beta"
-
-
-def test_interrupt_from_raw():
+def test_interrupt_from_raw_and_none():
+    """辞書形式の割り込みデータから Interrupt オブジェクトを生成し、None を許容することを検証するテスト。"""
     payload = main._interrupt_from_raw({"id": "x", "value": "y"})
-    assert payload is not None
-    assert payload.id == "x"
+    assert payload is not None and payload.id == "x"
     assert main._interrupt_from_raw(None) is None
 
 
-def test_healthcheck_and_lists(client):
+def test_extract_event_error_message_variations():
+    """イベントペイロードからエラーメッセージを抽出するヘルパーの各分岐を検証するテスト。"""
+    assert main._extract_event_error_message({"message": "error"}) == "error"
+    assert (
+        main._extract_event_error_message({"data": {"message": "payload"}}) == "payload"
+    )
+    assert (
+        main._extract_event_error_message({"event": "failure", "data": {"other": 1}})
+        == "処理中にエラーが発生しました。"
+    )
+
+
+def test_health_and_thread_endpoints(client):
+    """ヘルスチェックとスレッド一覧エンドポイントが期待した統計を返すことを検証するテスト。
+
+    Args:
+        client (tuple[TestClient, StubWorkflowService]): API クライアントとスタブサービスのペア。
+    """
     test_client, service = client
     response = test_client.get("/healthz")
     assert response.status_code == 200
-    assert response.json()["status"] == "ok"
+    assert response.json()["details"] == {"ok": True}
 
     response = test_client.get("/threads")
     body = response.json()
     assert body["active_count"] == 1
+    assert body["pending_count"] == 1
     assert service.start_calls == []
 
 
 def test_get_thread_state(client):
+    """スレッド状態取得 API が存在するスレッドの詳細と未検出時の 404 を返すことを検証するテスト。
+
+    Args:
+        client (tuple[TestClient, StubWorkflowService]): API クライアントとスタブサービスのペア。
+    """
     test_client, _ = client
-    response = test_client.get("/threads/thread-1/state")
+    response = test_client.get("/threads/thread-a/state")
     assert response.status_code == 200
     assert response.json()["pending_interrupt"]["id"] == "i"
 
-    response = test_client.get("/threads/missing/state")
-    assert response.status_code == 404
+    missing = test_client.get("/threads/missing/state")
+    assert missing.status_code == 404
 
 
-def test_websocket_research_flow(client):
+def test_websocket_flow_handles_interrupt_and_resume(client):
+    """WebSocket フローが割り込みと再開を順序通り転送し、サービス呼び出しを追跡することを検証するテスト。
+
+    Args:
+        client (tuple[TestClient, StubWorkflowService]): API クライアントとスタブサービスのペア。
+    """
     test_client, service = client
 
-    service.outcomes = [
-        SimpleNamespace(
-            status="pending_human",
-            events=[{"event": "message", "payload": 1}],
-            state={"stage": 1},
-            interrupt={"id": "plan", "value": "prompt"},
-        ),
-        SimpleNamespace(
-            status="completed",
-            events=[{"event": "message", "payload": 2}],
-            state={"stage": 2},
-            interrupt=None,
-        ),
+    service.start_scripts = [
+        Script(
+            events=[
+                {
+                    "event": "alpha",
+                    "level": "error",
+                    "data": {"message": "first"},
+                }
+            ],
+            outcome=SimpleNamespace(
+                status="pending_human",
+                events=[{"event": "alpha"}],
+                state={"stage": 1},
+                interrupt={"id": "plan", "value": "調査計画を編集しますか"},
+            ),
+        )
+    ]
+    service.resume_scripts = [
+        Script(
+            events=[{"event": "beta", "data": {"message": "second"}}],
+            outcome=SimpleNamespace(
+                status="completed",
+                events=[{"event": "beta"}],
+                state={"stage": 2},
+                interrupt=None,
+            ),
+        )
     ]
 
     with test_client.websocket_connect("/ws/research") as ws:
         ws.send_json({"query": " run "})
-        start = ws.receive_json()
-        assert start["type"] == "thread_started"
+        started = ws.receive_json()
+        assert started["type"] == "thread_started"
 
-        event_frame = ws.receive_json()
-        assert event_frame["payload"]["event"] == "message"
+        forwarded = ws.receive_json()
+        assert forwarded["payload"]["event"] == "alpha"
+
+        forwarded_error = ws.receive_json()
+        assert forwarded_error["type"] == "error"
+        assert forwarded_error["message"] == "first"
 
         interrupt = ws.receive_json()
         assert interrupt["type"] == "interrupt"
 
         ws.send_json({"decision": "maybe"})
-        error = ws.receive_json()
-        assert error["type"] == "error"
+        retry_error = ws.receive_json()
+        assert retry_error["type"] == "error"
 
-        interrupt_again = ws.receive_json()
-        assert interrupt_again["type"] == "interrupt"
+        second_interrupt = ws.receive_json()
+        assert second_interrupt["type"] == "interrupt"
 
         ws.send_json({"decision": "y", "plan": {"updated": True}})
-        event_after_resume = ws.receive_json()
-        assert event_after_resume["type"] == "event"
-        assert event_after_resume["payload"]["event"] == "message"
+        resumed = ws.receive_json()
+        assert resumed["payload"]["event"] == "beta"
 
-        final = ws.receive_json()
-        assert final["type"] == "complete"
+        completed = ws.receive_json()
+        assert completed["type"] == "complete"
 
-    assert service.resume_calls == [("thread-generated", "y", {"updated": True})]
+    assert service.start_calls[0][1].strip() == "run"
+    assert service.resume_calls == [("thread-1", "y", {"updated": True})]
 
 
-def test_websocket_research_blank_query(client):
+def test_websocket_blank_query_returns_error(client):
+    """空問い合わせで WebSocket がエラーを返し接続を閉じることを検証するテスト。
+
+    Args:
+        client (tuple[TestClient, StubWorkflowService]): API クライアントとスタブサービスのペア。
+    """
     test_client, _ = client
     with test_client.websocket_connect("/ws/research") as ws:
         ws.send_json({"query": "   "})
@@ -171,14 +233,22 @@ def test_websocket_research_blank_query(client):
         assert exc.value.code == 4000
 
 
-def test_websocket_missing_interrupt(client):
+def test_websocket_missing_interrupt_triggers_close(client):
+    """割り込みが返らないケースで WebSocket がエラーコード付きで終了することを検証するテスト。
+
+    Args:
+        client (tuple[TestClient, StubWorkflowService]): API クライアントとスタブサービスのペア。
+    """
     test_client, service = client
-    service.outcomes = [
-        SimpleNamespace(
-            status="pending_human",
+    service.start_scripts = [
+        Script(
             events=[],
-            state={"stage": 0},
-            interrupt=None,
+            outcome=SimpleNamespace(
+                status="pending_human",
+                events=[],
+                state={"stage": 0},
+                interrupt=None,
+            ),
         )
     ]
 
@@ -193,18 +263,29 @@ def test_websocket_missing_interrupt(client):
 
 
 @pytest.mark.asyncio
-async def test_websocket_research_finally_closes(monkeypatch: pytest.MonkeyPatch):
+async def test_websocket_exception_path_closes_connection(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """start_research 中の例外発生時にエラー通知と正常クローズが行われることを検証するテスト。
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): ワークフローサービスを爆発するダミーに差し替えるフィクスチャ。
+    """
+
     class ExplodingService:
-        def create_thread_id(self):
+
+        def create_thread_id(self) -> str:
             return "tid"
 
-        async def start_research(self, *, thread_id: str, query: str):
+        async def start_research(
+            self, *, thread_id: str, query: str, event_consumer=None
+        ):
             raise RuntimeError("boom")
 
     class StubWebSocket:
         def __init__(self):
-            self.sent = []
-            self.closed: list[int] = []
+            self.outputs: list[dict] = []
+            self.closes: list[int] = []
             self.inputs = iter([{"query": "anything"}])
 
         async def accept(self):
@@ -214,6 +295,47 @@ async def test_websocket_research_finally_closes(monkeypatch: pytest.MonkeyPatch
             return next(self.inputs)
 
         async def send_json(self, payload):
+            self.outputs.append(payload)
+
+        async def close(self, code: int):
+            self.closes.append(code)
+
+        @property
+        def application_state(self):
+            return WebSocketState.CONNECTED
+
+    monkeypatch.setattr(main, "workflow_service", ExplodingService())
+    websocket = StubWebSocket()
+
+    await main.websocket_research(websocket)  # type: ignore[arg-type]
+
+    assert websocket.outputs[-1]["type"] == "error"
+    assert 1000 in websocket.closes
+
+
+@pytest.mark.asyncio
+async def test_websocket_disconnect_handled_without_error(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """初回受信時にクライアント切断が発生しても追加送信やクローズを行わないことを検証するテスト。
+
+    Args:
+        monkeypatch (pytest.MonkeyPatch): ワークフローサービスをテスト用スタブへ差し替えるフィクスチャ。
+    """
+
+    class DisconnectingWebSocket:
+        def __init__(self):
+            self.accepted = False
+            self.sent: list[dict] = []
+            self.closed: list[int] = []
+
+        async def accept(self):
+            self.accepted = True
+
+        async def receive_json(self):
+            raise WebSocketDisconnect(code=1001)
+
+        async def send_json(self, payload):
             self.sent.append(payload)
 
         async def close(self, code: int):
@@ -221,14 +343,13 @@ async def test_websocket_research_finally_closes(monkeypatch: pytest.MonkeyPatch
 
         @property
         def application_state(self):
-            from starlette.websockets import WebSocketState
+            return WebSocketState.DISCONNECTED
 
-            return WebSocketState.CONNECTED
+    monkeypatch.setattr(main, "workflow_service", StubWorkflowService())
+    websocket = DisconnectingWebSocket()
 
-    monkeypatch.setattr(main, "workflow_service", ExplodingService())
-    stub = StubWebSocket()
+    await main.websocket_research(websocket)  # type: ignore[arg-type]
 
-    await main.websocket_research(stub)  # type: ignore[arg-type]
-
-    assert stub.sent[-1]["type"] == "error"
-    assert stub.closed.count(1000) >= 1
+    assert websocket.accepted is True
+    assert websocket.sent == []
+    assert websocket.closed == []
