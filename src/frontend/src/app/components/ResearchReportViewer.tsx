@@ -5,22 +5,38 @@ interface ResearchReportViewerProps {
   markdownComponents: Components;
   markdown?: string | null;
   fallback?: string | null;
+  className?: string;
 }
 
-export function ResearchReportViewer({ markdownComponents, markdown, fallback }: ResearchReportViewerProps) {
+export function ResearchReportViewer({
+  markdownComponents,
+  markdown,
+  fallback,
+  className,
+}: ResearchReportViewerProps) {
+  const containerClassName = [
+    "glass-elevated relative max-w-3xl overflow-hidden rounded-3xl border border-emerald-400/30 px-6 py-6",
+    className,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div className="max-w-3xl rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-5">
-      <h3 className="text-sm font-semibold text-emerald-200">レポート</h3>
+    <div className={containerClassName}>
+      <span className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-emerald-400/60 via-emerald-300/40 to-transparent" />
+      <h3 className="text-sm font-semibold uppercase tracking-widest text-emerald-200">
+        レポート
+      </h3>
       {markdown ? (
-        <div className="mt-3 space-y-4 rounded-xl bg-slate-950/60 px-4 py-3 text-sm text-emerald-100">
+        <div className="mt-4 space-y-4 rounded-2xl border border-emerald-400/20 bg-slate-950/70 px-5 py-4 text-sm leading-relaxed text-emerald-100 shadow-[0_24px_40px_-32px_rgba(16,185,129,0.6)]">
           <ReactMarkdown components={markdownComponents}>{markdown}</ReactMarkdown>
         </div>
       ) : fallback ? (
-        <pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950/60 px-4 py-3 text-xs text-emerald-100">
-          {fallback}
-        </pre>
+          <div className="mt-4 space-y-4 rounded-2xl border border-emerald-400/20 bg-slate-950/70 px-5 py-4 text-sm leading-relaxed text-emerald-100 shadow-[0_24px_40px_-32px_rgba(16,185,129,0.6)]">
+          <ReactMarkdown components={markdownComponents}>{fallback}</ReactMarkdown>
+        </div>
       ) : (
-        <p className="mt-3 text-sm text-emerald-100/70">レポート内容がまだ整形されていません。</p>
+            <p className="mt-4 text-sm text-emerald-100/70">レポート内容がまだ整形されていません。</p>
       )}
     </div>
   );

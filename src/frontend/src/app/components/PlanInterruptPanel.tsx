@@ -1,3 +1,5 @@
+"use client";
+
 import type { FormEvent } from "react";
 import type { InterruptPayload } from "../../types/api";
 import type { ResearchPlanFormState } from "../types";
@@ -39,27 +41,34 @@ export function PlanInterruptPanel({
     return null;
   }
 
+  const interruptText = formatInterruptContent(interrupt.value).trim();
+  const shouldShowMessage = interruptText.length > 0 && interruptText !== "調査計画を編集しますか？";
+
   if (!isEditing) {
     return (
-      <div className="max-w-3xl rounded-2xl border border-amber-500/40 bg-amber-500/10 p-5">
-        <h3 className="text-sm font-semibold text-amber-200">調査計画の確認が求められています</h3>
-        <p className="mt-2 whitespace-pre-wrap text-sm text-amber-100/90">
-          {formatInterruptContent(interrupt.value)}
-        </p>
-        <div className="mt-4 flex flex-wrap gap-3">
+      <div className="glass-elevated max-w-3xl rounded-3xl border border-amber-400/35 px-6 py-6">
+        <h3 className="text-sm font-semibold uppercase tracking-widest text-amber-200">
+          この計画で進めますか？
+        </h3>
+        {shouldShowMessage ? (
+          <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-amber-100/90">
+            {interruptText}
+          </p>
+        ) : null}
+        <div className="mt-5 flex flex-wrap gap-3">
           <button
             type="button"
             onClick={onApprovePlan}
-            className="rounded-lg border border-emerald-400/60 bg-emerald-400/20 px-4 py-2 text-sm font-medium text-emerald-100 transition-colors hover:border-emerald-300 hover:bg-emerald-400/30"
+            className="rounded-xl border border-emerald-400/50 bg-gradient-to-br from-emerald-400/35 via-emerald-500/20 to-transparent px-4 py-2 text-sm font-semibold text-emerald-50 transition-all hover:border-emerald-300/70 hover:from-emerald-400/45 hover:via-emerald-500/30"
           >
             この計画で進行
           </button>
           <button
             type="button"
             onClick={onStartEditing}
-            className="rounded-lg border border-amber-400/60 bg-slate-900/80 px-4 py-2 text-sm text-amber-100 transition-colors hover:border-amber-300 hover:bg-amber-500/20"
+            className="rounded-xl border border-amber-300/50 bg-slate-900/70 px-4 py-2 text-sm font-medium text-amber-100 transition-all hover:border-amber-200/60 hover:bg-amber-500/20"
           >
-            計画を編集
+            修正してから進める
           </button>
         </div>
       </div>
@@ -72,13 +81,17 @@ export function PlanInterruptPanel({
   };
 
   return (
-    <div className="max-w-3xl rounded-2xl border border-amber-500/40 bg-amber-500/10 p-5">
-      <h3 className="text-sm font-semibold text-amber-200">調査計画の確認が求められています</h3>
-      <p className="mt-2 whitespace-pre-wrap text-sm text-amber-100/90">
-        {formatInterruptContent(interrupt.value)}
-      </p>
-      <form className="mt-4 space-y-5" onSubmit={handleSubmit}>
-        <div className="space-y-5">
+    <div className="glass-elevated max-w-3xl rounded-3xl border border-amber-400/40 px-6 py-6">
+      <h3 className="text-sm font-semibold uppercase tracking-widest text-amber-200">
+        計画内容を調整して再開
+      </h3>
+      {shouldShowMessage ? (
+        <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-amber-100/90">
+          {interruptText}
+        </p>
+      ) : null}
+      <form className="mt-5 space-y-6" onSubmit={handleSubmit}>
+        <div className="space-y-6">
           <div className="space-y-2">
             <label className="text-xs font-medium uppercase tracking-wide text-amber-100/80">
               調査目的
@@ -92,7 +105,7 @@ export function PlanInterruptPanel({
                 onPlanErrorReset();
               }}
               rows={3}
-              className="w-full resize-none rounded-xl border border-amber-500/30 bg-slate-950/60 px-4 py-3 text-sm text-slate-100 focus:border-amber-400 focus:outline-none"
+              className="w-full resize-none rounded-2xl border border-amber-400/40 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 focus:border-amber-300 focus:outline-none"
               placeholder="調査の狙いや前提条件を記載してください"
             />
           </div>
@@ -111,7 +124,7 @@ export function PlanInterruptPanel({
                   onPlanErrorReset();
                 }}
                 rows={3}
-                className="w-full resize-none rounded-xl border border-amber-500/30 bg-slate-950/60 px-4 py-3 text-sm text-slate-100 focus:border-amber-400 focus:outline-none"
+                className="w-full resize-none rounded-2xl border border-amber-400/40 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 focus:border-amber-300 focus:outline-none"
                 placeholder="レポート冒頭で伝えたいポイント"
               />
             </div>
@@ -128,7 +141,7 @@ export function PlanInterruptPanel({
                   onPlanErrorReset();
                 }}
                 rows={3}
-                className="w-full resize-none rounded-xl border border-amber-500/30 bg-slate-950/60 px-4 py-3 text-sm text-slate-100 focus:border-amber-400 focus:outline-none"
+                className="w-full resize-none rounded-2xl border border-amber-400/40 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 focus:border-amber-300 focus:outline-none"
                 placeholder="調査を通じて導きたい結論"
               />
             </div>
@@ -143,7 +156,7 @@ export function PlanInterruptPanel({
                   onAddSection();
                   onPlanErrorReset();
                 }}
-                className="rounded-lg border border-amber-400/50 px-3 py-1 text-xs font-medium text-amber-100 transition-colors hover:border-amber-300 hover:bg-amber-400/20"
+                className="rounded-lg border border-amber-300/60 px-3 py-1 text-xs font-medium text-amber-100 transition-all hover:border-amber-200 hover:bg-amber-400/20"
               >
                 セクションを追加
               </button>
@@ -154,7 +167,7 @@ export function PlanInterruptPanel({
               return (
                 <div
                   key={`section-${index}`}
-                  className="space-y-3 rounded-xl border border-amber-500/30 bg-slate-950/40 p-4"
+                  className="space-y-3 rounded-2xl border border-amber-400/35 bg-slate-950/60 p-4"
                 >
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-amber-100">セクション {index + 1}</p>
@@ -185,7 +198,7 @@ export function PlanInterruptPanel({
                         });
                         onPlanErrorReset();
                       }}
-                      className="w-full rounded-xl border border-amber-500/30 bg-slate-950/60 px-4 py-2 text-sm text-slate-100 focus:border-amber-400 focus:outline-none"
+                      className="w-full rounded-xl border border-amber-400/35 bg-slate-950/70 px-4 py-2 text-sm text-slate-100 focus:border-amber-300 focus:outline-none"
                       placeholder="例: 市場規模の把握"
                     />
                   </div>
@@ -203,7 +216,7 @@ export function PlanInterruptPanel({
                         onPlanErrorReset();
                       }}
                       rows={3}
-                      className="w-full resize-none rounded-xl border border-amber-500/30 bg-slate-950/60 px-4 py-3 text-sm text-slate-100 focus:border-amber-400 focus:outline-none"
+                      className="w-full resize-none rounded-xl border border-amber-400/35 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 focus:border-amber-300 focus:outline-none"
                       placeholder="このセクションで特に掘り下げたい観点"
                     />
                   </div>
@@ -222,7 +235,7 @@ export function PlanInterruptPanel({
                         onPlanErrorReset();
                       }}
                       rows={3}
-                      className="w-full resize-none rounded-xl border border-amber-500/30 bg-slate-950/60 px-4 py-3 text-sm text-slate-100 focus:border-amber-400 focus:outline-none"
+                      className="w-full resize-none rounded-xl border border-amber-400/35 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 focus:border-amber-300 focus:outline-none"
                       placeholder="検討したい質問を1行ずつ入力してください"
                     />
                   </div>
@@ -244,7 +257,7 @@ export function PlanInterruptPanel({
                 onPlanErrorReset();
               }}
               rows={3}
-              className="w-full resize-none rounded-xl border border-amber-500/30 bg-slate-950/60 px-4 py-3 text-sm text-slate-100 focus:border-amber-400 focus:outline-none"
+              className="w-full resize-none rounded-2xl border border-amber-400/35 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 focus:border-amber-300 focus:outline-none"
               placeholder="補足のアイデアや注意点があればここに記載"
             />
           </div>
@@ -255,14 +268,14 @@ export function PlanInterruptPanel({
         <div className="flex flex-wrap gap-3">
           <button
             type="submit"
-            className="rounded-lg border border-amber-400/60 bg-amber-400/20 px-4 py-2 text-sm font-medium text-amber-100 transition-colors hover:border-amber-300 hover:bg-amber-400/30"
+            className="rounded-xl border border-amber-300/60 bg-gradient-to-r from-amber-400/35 via-amber-500/20 to-transparent px-4 py-2 text-sm font-semibold text-amber-50 transition-all hover:border-amber-200/70 hover:from-amber-400/45 hover:via-amber-500/30"
           >
             更新して再開
           </button>
           <button
             type="button"
             onClick={onCancelEditing}
-            className="rounded-lg border border-slate-700/70 bg-slate-900/80 px-4 py-2 text-sm text-slate-200 transition-colors hover:border-slate-600 hover:bg-slate-900"
+            className="rounded-xl border border-slate-700/60 bg-slate-900/70 px-4 py-2 text-sm text-slate-200 transition-all hover:border-slate-500 hover:bg-slate-900"
           >
             キャンセル
           </button>

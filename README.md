@@ -38,6 +38,20 @@ DeepReSearch は、LangGraph と LangChain を用いて多段階のウェブリ�
    export OPENROUTER_API_KEY="your-key"
    ```
 
+### テストの実行
+
+```bash
+python -m pytest
+```
+
+カバレッジと視覚的なレポートが必要な場合は次のように実行します。
+
+```bash
+python -m pytest --cov=src/backend --cov-report=term-missing --cov-report=html
+```
+
+HTML レポートは `htmlcov/index.html` に生成され、ブラウザや VS Code の Live Preview で確認できます。
+
 ### フロントエンド (Next.js)
 
 1. 依存関係をインストールします。
@@ -79,14 +93,6 @@ npm run dev
 - 調査ログと進行中ステップ
 - 調査計画のレビュー・編集フォーム (interrupt 発生時)
 - 生成済みプランとレポートの閲覧
-
-### CLI クライアントから操作する
-
-```bash
-python -m clients.research_client ws "人類の歴史"
-```
-
-CLI 上で中断が発生したら `y` / `n` で判断し、必要に応じて編集済み計画 JSON を指定して再開できます。
 
 ### API ドキュメント
 
