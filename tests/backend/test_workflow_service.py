@@ -83,7 +83,7 @@ def service(monkeypatch: pytest.MonkeyPatch):
     svc = workflow.WorkflowService()
 
     prompt_interrupt = SimpleInterrupt(
-        "plan_judge", "調査計画を編集しますか？ y or n: "
+        "plan_judge", "調査計画を編集しますか？"
     )
     model = DummyModel("alpha")
     graph.set_script(
@@ -156,7 +156,7 @@ async def test_start_research_returns_interrupt(service):
     assert outcome.status == "pending_human"
     assert outcome.interrupt == {
         "id": "plan_judge",
-        "value": "調査計画を編集しますか？ y or n: ",
+        "value": "調査計画を編集しますか？",
     }
     assert [event["event"] for event in outcome.events] == [
         "message",
@@ -170,7 +170,7 @@ async def test_start_research_returns_interrupt(service):
     assert snapshot.state == {"step": {"label": "alpha", "nested": {"value": 42}}}
     assert snapshot.pending_interrupt == {
         "id": "plan_judge",
-        "value": "調査計画を編集しますか？ y or n: ",
+        "value": "調査計画を編集しますか？",
     }
 
 
