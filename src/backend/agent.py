@@ -1,3 +1,4 @@
+import datetime
 from os import getenv
 from typing import Annotated
 
@@ -300,9 +301,11 @@ class OSSDeepResearchAgent:
         # 2. システムプロンプトをフォーマット
         formatted_plan = plan.model_dump()
         final_prompt_text = DEEP_RESEARCH_SYSTEM_PROMPT.format(
-            SEARCH_PLAN=formatted_plan,
             SEARCH_QUERIES_PER_SECTION=params.search_queries_per_section,
+            SEARCH_API="DuckDuckGo",
             SEARCH_ITERATIONS=params.search_iterations,
+            SEARCH_PLAN=formatted_plan,
+            CURRENT_DATE=datetime.date.today(),
         )
 
         # 3. ReActエージェントへの初期メッセージを作成
@@ -398,8 +401,8 @@ class OSSDeepResearchAgent:
         compiled_graph = graph.compile(checkpointer=memory)
 
         # graph実行イメージ保存
-        # graph_image = compiled_graph.get_graph().draw_mermaid_png()
-        # with open("./graph.png", "wb") as file:
-        #     file.write(graph_image)
+        graph_image = compiled_graph.get_graph().draw_mermaid_png()
+        with open("./graph.png", "wb") as file:
+            file.write(graph_image)
 
         return compiled_graph
