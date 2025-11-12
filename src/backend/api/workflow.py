@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
 from dataclasses import dataclass
@@ -12,6 +13,8 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command, Interrupt
 
 from ..agent import OSSDeepResearchAgent
+
+logger = logging.getLogger(__name__)
 
 _STREAM_VERSION = "v1"
 _DEFAULT_RECURSION_LIMIT = 100
@@ -337,6 +340,16 @@ class WorkflowService:
                 current_payload, config=config, version=_STREAM_VERSION
             ):
                 sanitized = self._sanitize_event(event)
+                if self._is_error_event(sanitized):
+                    error_message = self._extract_error_message(sanitized)
+                    sanitized.setdefault("level", "error")
+                    sanitized.setdefault("message", error_message)
+                    logger.error(
+                        "Workflow error event detected [thread_id=%s, event=%s]: %s",
+                        thread_id,
+                        sanitized.get("event"),
+                        error_message,
+                    )
                 if event_consumer:
                     await event_consumer(sanitized)
                 collected_events.append(sanitized)
@@ -378,7 +391,18 @@ class WorkflowService:
             async for event in self._graph.astream_events(
                 current_payload, config=config, version=_STREAM_VERSION
             ):
-                yield self._sanitize_event(event)
+                sanitized = self._sanitize_event(event)
+                if self._is_error_event(sanitized):
+                    error_message = self._extract_error_message(sanitized)
+                    sanitized.setdefault("level", "error")
+                    sanitized.setdefault("message", error_message)
+                    logger.error(
+                        "Workflow error event detected during stream [thread_id=%s, event=%s]: %s",
+                        thread_id,
+                        sanitized.get("event"),
+                        error_message,
+                    )
+                yield sanitized
                 pending = self._extract_interrupt(event)
                 if pending:
                     break
@@ -406,6 +430,38 @@ class WorkflowService:
         payload = json.dumps(event, default=self._convert_model, ensure_ascii=False)
         event_type = event.get("event", "message")
         return f"event: {event_type}\ndata: {payload}\n\n"
+
+    def _is_error_event(self, event: Dict[str, Any]) -> bool:
+        event_name = str(event.get("event") or "").lower()
+        if "error" in event_name:
+            return True
+        data = event.get("data")
+        if isinstance(data, dict):
+            if "error" in data:
+                return True
+            return any("error" in str(key).lower() for key in data.keys())
+        return False
+
+    def _extract_error_message(self, event: Dict[str, Any]) -> str:
+        data = event.get("data")
+        if isinstance(data, dict):
+            candidate = (
+                data.get("error")
+                or data.get("message")
+                or data.get("text")
+                or data.get("details")
+            )
+            if candidate is not None:
+                if isinstance(candidate, str):
+                    return candidate
+                try:
+                    return json.dumps(candidate, ensure_ascii=False)
+                except (TypeError, ValueError):
+                    return str(candidate)
+        name = event.get("event") or event.get("name")
+        if name:
+            return f"{name} が発生しました。"
+        return "LLM処理中にエラーが発生しました。"
 
 
 workflow_service = WorkflowService()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict
@@ -19,6 +20,8 @@ _DEFAULT_ALLOWED_ORIGINS = {
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 }
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_allowed_origins() -> list[str]:
@@ -44,6 +47,21 @@ def _interrupt_from_raw(raw: Dict[str, Any] | None) -> InterruptPayload | None:
     if not raw:
         return None
     return InterruptPayload.model_validate(raw)
+
+
+def _extract_event_error_message(event: Dict[str, Any]) -> str:
+    message = event.get("message")
+    if isinstance(message, str) and message:
+        return message
+
+    payload = event.get("data") or event.get("payload")
+    if isinstance(payload, dict):
+        for key in ("message", "error", "text", "details"):
+            value = payload.get(key)
+            if isinstance(value, str) and value:
+                return value
+
+    return "処理中にエラーが発生しました。"
 
 
 @app.get("/healthz", response_model=HealthResponse, tags=["system"])
@@ -119,6 +137,21 @@ async def websocket_research(websocket: WebSocket) -> None:
                     "payload": event,
                 }
             )
+            if event.get("level") == "error":
+                error_message = _extract_event_error_message(event)
+                logger.error(
+                    "Workflow error event forwarded [thread_id=%s, event=%s]: %s",
+                    thread_id,
+                    event.get("event"),
+                    error_message,
+                )
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "thread_id": thread_id,
+                        "message": error_message,
+                    }
+                )
 
         outcome = await workflow_service.start_research(
             thread_id=thread_id,
@@ -143,6 +176,7 @@ async def websocket_research(websocket: WebSocket) -> None:
                 await websocket.send_json(
                     {
                         "type": "error",
+                        "thread_id": thread_id,
                         "message": "割り込み情報が取得できませんでした。",
                     }
                 )
@@ -163,6 +197,7 @@ async def websocket_research(websocket: WebSocket) -> None:
                 await websocket.send_json(
                     {
                         "type": "error",
+                        "thread_id": thread_id,
                         "message": "decision は 'y' または 'n' を指定してください。",
                     }
                 )
@@ -179,8 +214,12 @@ async def websocket_research(websocket: WebSocket) -> None:
     except WebSocketDisconnect:  # pragma: no cover - 切断時
         return
     except Exception as exc:  # pragma: no cover - 想定外エラー
+        logger.exception("Unhandled exception in websocket_research")
         if websocket.application_state == WebSocketState.CONNECTED:
-            await websocket.send_json({"type": "error", "message": str(exc)})
+            error_payload = {"type": "error", "message": str(exc)}
+            if thread_id:
+                error_payload["thread_id"] = thread_id
+            await websocket.send_json(error_payload)
             await websocket.close(code=1011)
     finally:
         if websocket.application_state == WebSocketState.CONNECTED:
