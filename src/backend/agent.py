@@ -1,26 +1,24 @@
+import asyncio
 import datetime
 from os import getenv
 from typing import Annotated
 
-import asyncio
 import langgraph.checkpoint.serde.jsonplus as jsonplus
 import nest_asyncio
 from langchain_core.load.load import DEFAULT_NAMESPACES, Reviver
-from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 
 if "src" not in DEFAULT_NAMESPACES:
     DEFAULT_NAMESPACES.append("src")
+from langchain.agents import create_agent
+from langchain_tavily import TavilySearch
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.serde.jsonplus import InvalidModuleError, JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode
 from langgraph.types import interrupt
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-from langchain_tavily import TavilySearch
-
+from pydantic import BaseModel, Field, model_validator
 
 from src.backend.ai.analyze.query_analyze import QueryAnalyzeAI, ResearchParameters
 from src.backend.ai.reflect.reflect_search_result import ReflectionResultSchema
@@ -80,16 +78,12 @@ class State(BaseModel):
         research_plan_human_edit (bool | None): 研究計画を人間が編集するかどうか。
     """
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
     user_input: str | None = Field()
     research_parameters: ResearchParameters | None = Field(default=None)
     research_plan: GeneratedObjectSchema | None = Field(default=None)
     analysys: ReflectionResultSchema | None = Field(default=None)
     research_plan_human_edit: bool | None = Field(default=None)
-    # ReAct
     messages: Annotated[list, add_messages] = Field(default=[])
-    # 最終結果
     report: str | None = Field(default=None)
 
     @model_validator(mode="before")
@@ -143,18 +137,11 @@ class OSSDeepResearchAgent:
             openai_api_key=getenv("OPENROUTER_API_KEY"),  # type: ignore[call-arg]
             openai_api_base="https://openrouter.ai/api/v1",  # type: ignore[call-arg]
         )
-        self.planner_llm = ChatOpenAI(
-            model="z-ai/glm-4.5-air:free",
-            openai_api_key=getenv("OPENROUTER_API_KEY"),  # type: ignore[call-arg]
-            openai_api_base="https://openrouter.ai/api/v1",  # type: ignore[call-arg]
-        )
         self.tool_callable_llm = ChatOpenAI(
             model="z-ai/glm-4.5-air:free",
             openai_api_key=getenv("OPENROUTER_API_KEY"),  # type: ignore[call-arg]
             openai_api_base="https://openrouter.ai/api/v1",  # type: ignore[call-arg]
         )
-
-        self.llm_with_tools = self.tool_callable_llm.bind_tools(self.tools)
 
         # uvloop が利用されている場合は nest_asyncio が未対応のため適用をスキップ。
         loop = None
@@ -204,9 +191,8 @@ class OSSDeepResearchAgent:
         Returns:
             dict[str, GeneratedObjectSchema]: 研究計画を含む差分ステート。
         """
-        ai = PlanResearchAI(self.planner_llm)
+        ai = PlanResearchAI(self.tool_callable_llm)
         response = await ai(state.user_input)
-        print(response)
         return {"research_plan": response}
 
     async def _research_plan_human_judge(self, state: State, config: RunnableConfig):
@@ -259,8 +245,29 @@ class OSSDeepResearchAgent:
         Returns:
             dict[str, list]: LLM 応答を追記したメッセージ差分。
         """
-        response = await self.llm_with_tools.ainvoke(state.messages)
-        return {"messages": [response]}
+        query = state.user_input
+        plan = state.research_plan
+        params = state.research_parameters
+
+        formatted_system_prompt = DEEP_RESEARCH_SYSTEM_PROMPT.format(
+            SEARCH_QUERIES_PER_SECTION=params.search_queries_per_section,
+            SEARCH_API="Tavily",
+            SEARCH_ITERATIONS=params.search_iterations,
+            SEARCH_PLAN=plan.model_dump(),
+            CURRENT_DATE=datetime.date.today(),
+        )
+
+        deepresearch_agent = create_agent(
+            model=self.tool_callable_llm,
+            tools=self.tools,
+            system_prompt=formatted_system_prompt,
+        )
+
+        response = await deepresearch_agent.ainvoke(
+            {"messages": [{"role": "user", "content": query}]}
+        )
+
+        return response
 
     def _routing_human_edit_judge(self, state: State):
         """人手編集フラグに基づき次ノードを決定する。
@@ -275,56 +282,6 @@ class OSSDeepResearchAgent:
             return "edit"
         else:
             return "search"
-
-    def _routing_should_continue(self, state: State):
-        """ReAct ループ継続可否を判定する。
-
-        Args:
-            state (State): 最新メッセージを保持するステート。
-
-        Returns:
-            str: ルーティング先ノード名。
-        """
-        last_message = state.messages[-1]
-        if last_message.tool_calls:
-            # ツール呼び出しがあれば 'tools' ノードへ
-            return "continue_react_loop"
-        else:
-            # ツール呼び出しがなければ (＝最終回答が出た) 終了
-            return "finish_research"
-
-    def _node_prepare_research(self, state: State):
-        """ReAct 用の初期メッセージを構築する。
-
-        Args:
-            state (State): 研究計画とパラメータを保持するステート。
-
-        Returns:
-            dict[str, list]: システム・ユーザーメッセージを含む差分ステート。
-        """
-        query = state.user_input
-        plan = state.research_plan
-        params = state.research_parameters
-
-        assert params
-        assert plan
-
-        # 2. システムプロンプトをフォーマット
-        formatted_plan = plan.model_dump()
-        final_prompt_text = DEEP_RESEARCH_SYSTEM_PROMPT.format(
-            SEARCH_QUERIES_PER_SECTION=params.search_queries_per_section,
-            SEARCH_API="Tavily",
-            SEARCH_ITERATIONS=params.search_iterations,
-            SEARCH_PLAN=formatted_plan,
-            CURRENT_DATE=datetime.date.today(),
-        )
-
-        # 3. ReActエージェントへの初期メッセージを作成
-        system_message = SystemMessage(content=final_prompt_text)
-        human_message = HumanMessage(content=query)  # ユーザーの元のクエリ
-
-        # 4. messages に追加 (ReActループの開始)
-        return {"messages": [system_message, human_message]}
 
     def _node_write_research_result(self, state: State):
         """LLM 応答から最終レポート本文を抽出する。
@@ -369,19 +326,16 @@ class OSSDeepResearchAgent:
             StateGraph: コンパイル済みの LangGraph。
         """
         graph = StateGraph(State)
-        node_tools = ToolNode(self.tools)
 
         # Node追加
         graph.add_node(self._node_generate_research_parameters)
         graph.add_node(self._node_make_research_plan)
         graph.add_node(self._research_plan_human_judge)
         graph.add_node(self._node_edit_research_plan)
-        graph.add_node(self._node_prepare_research)
         graph.add_node(self._node_deep_research)
-        graph.add_node("node_tools", node_tools)
         graph.add_node(self._node_write_research_result)
 
-        # Edge追加
+        # エッジ追加
         graph.add_edge(START, "_node_generate_research_parameters")
         graph.add_edge("_node_generate_research_parameters", "_node_make_research_plan")
         graph.add_edge("_node_make_research_plan", "_research_plan_human_judge")
@@ -390,20 +344,11 @@ class OSSDeepResearchAgent:
             self._routing_human_edit_judge,
             {
                 "edit": "_node_edit_research_plan",
-                "search": "_node_prepare_research",
+                "search": "_node_deep_research",
             },
         )
-        graph.add_edge("_node_edit_research_plan", "_node_prepare_research")
-        graph.add_edge("_node_prepare_research", "_node_deep_research")
-        graph.add_edge("node_tools", "_node_deep_research")
-        graph.add_conditional_edges(
-            "_node_deep_research",
-            self._routing_should_continue,
-            {
-                "continue_react_loop": "node_tools",
-                "finish_research": "_node_write_research_result",
-            },
-        )
+        graph.add_edge("_node_edit_research_plan", "_node_deep_research")
+        graph.add_edge("_node_deep_research", "_node_write_research_result")
         graph.add_edge("_node_write_research_result", END)
 
         memory = MemorySaver(
