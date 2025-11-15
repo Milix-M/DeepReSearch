@@ -1,9 +1,11 @@
 import builtins
+import os
 import types
-from collections import deque
 
 import pytest
 from langchain_core.runnables import RunnableConfig
+
+os.environ.setdefault("TAVILY_API_KEY", "test")
 
 import src.backend.agent as agent_module
 from src.backend.agent import (
@@ -15,37 +17,34 @@ from src.backend.agent import (
 )
 
 
-class DummyToolLLM:
-    def __init__(self):
-        self.calls = []
-        self.responses = deque()
+class DummyTool:
+    """LangGraph ToolNode 互換の最小オブジェクト。"""
 
-    async def ainvoke(self, messages):
-        self.calls.append(messages)
-        if self.responses:
-            return self.responses.popleft()
-        return types.SimpleNamespace(tool_calls=[], content="fallback")
+    def __init__(self, name: str):
+        self.name = name
 
 
 class DummyChatOpenAI:
+    """ChatOpenAI の挙動を記録するだけのスタブ。"""
 
     def __init__(self, **kwargs):
         self.kwargs = kwargs
-        self.bound_tools = None
-
-    def with_structured_output(self, schema):
-        return types.SimpleNamespace(schema=schema)
-
-    def bind_tools(self, tools):
-        self.bound_tools = tuple(tools)
-        return DummyToolLLM()
 
 
 @pytest.fixture(autouse=True)
 def patch_dependencies(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(agent_module, "web_research", "web_tool")
-    monkeypatch.setattr(agent_module, "reflect_on_results", "reflect_tool")
+    created_tools = []
+
+    def fake_tavily(*_args, **_kwargs):
+        tool = DummyTool("web_tool")
+        created_tools.append(tool)
+        return tool
+
+    reflect_tool = DummyTool("reflect_tool")
+    monkeypatch.setattr(agent_module, "TavilySearch", fake_tavily)
+    monkeypatch.setattr(agent_module, "reflect_on_results", reflect_tool)
     monkeypatch.setattr(agent_module, "ChatOpenAI", DummyChatOpenAI)
+    return {"created_tools": created_tools, "reflect_tool": reflect_tool}
 
 
 def test_namespace_serializer_reviver_handles_allowlist(
@@ -136,7 +135,9 @@ def test_state_validator_converts_legacy_models():
     assert isinstance(dict_state.research_plan, GeneratedObjectSchema)
 
 
-def test_agent_initialization_applies_patch(monkeypatch: pytest.MonkeyPatch):
+def test_agent_initialization_applies_patch(
+    patch_dependencies, monkeypatch: pytest.MonkeyPatch
+):
     """イベントループ未初期化時に nest_asyncio のパッチが適用されることを検証するテスト。
 
     Args:
@@ -159,11 +160,16 @@ def test_agent_initialization_applies_patch(monkeypatch: pytest.MonkeyPatch):
     agent = OSSDeepResearchAgent()
 
     assert applied["loop"] is None
-    assert agent.tools == ["web_tool", "reflect_tool"]
-    assert isinstance(agent.llm_with_tools, DummyToolLLM)
+    assert agent.tools[0].name == "web_tool"
+    assert agent.tools[1].name == "reflect_tool"
+    assert agent.llm.kwargs["model"] == "tngtech/deepseek-r1t2-chimera:free"
+    assert agent.tool_callable_llm.kwargs["model"] == "z-ai/glm-4.5-air:free"
+    assert patch_dependencies["created_tools"]  # TavilySearch が呼び出された
 
 
-def test_agent_skips_patch_for_uvloop(monkeypatch: pytest.MonkeyPatch):
+def test_agent_skips_patch_for_uvloop(
+    patch_dependencies, monkeypatch: pytest.MonkeyPatch
+):
     """uvloop 実行時には nest_asyncio のパッチがスキップされることを検証するテスト。
 
     Args:
@@ -184,7 +190,7 @@ def test_agent_skips_patch_for_uvloop(monkeypatch: pytest.MonkeyPatch):
     agent = OSSDeepResearchAgent()
 
     assert called == []
-    assert isinstance(agent.llm_with_tools, DummyToolLLM)
+    assert agent.tools[0].name == "web_tool"
 
 
 @pytest.mark.asyncio
@@ -237,28 +243,34 @@ async def test_agent_nodes_cover_all_paths(monkeypatch: pytest.MonkeyPatch):
             self.calls.append(query)
             return generated_plan
 
-    dummy_tool_llm = DummyToolLLM()
-    dummy_tool_llm.responses.extend(
-        [
-            types.SimpleNamespace(tool_calls=[{"tool": "call"}], content="tool"),
-            types.SimpleNamespace(
-                tool_calls=[],
-                content=[
-                    {"text": "fragment"},
-                    {"type": "text", "text": "more"},
-                    {"type": "text", "value": "alt"},
-                    {"other": 1},
-                    "tail",
-                ],
-            ),
-        ]
-    )
+    class DummyDeepResearchAgent:
+        def __init__(self):
+            self.calls = []
+            self.response = {
+                "messages": [
+                    types.SimpleNamespace(
+                        content=[
+                            {"text": "fragment"},
+                            {"type": "text", "text": "more"},
+                            {"type": "text", "value": "alt"},
+                            {"other": 1},
+                            "tail",
+                        ]
+                    )
+                ]
+            }
+
+        async def ainvoke(self, payload):
+            self.calls.append(payload)
+            return self.response
+
+    dummy_deep_agent = DummyDeepResearchAgent()
 
     monkeypatch.setattr(agent_module, "QueryAnalyzeAI", DummyQueryAnalyzeAI)
     monkeypatch.setattr(agent_module, "PlanResearchAI", DummyPlanResearchAI)
+    monkeypatch.setattr(agent_module, "create_agent", lambda **_: dummy_deep_agent)
 
     agent = OSSDeepResearchAgent()
-    agent.llm_with_tools = dummy_tool_llm  # type: ignore[assignment]
 
     state = State(user_input="topic")
     params_result = await agent._node_generate_research_parameters(
@@ -269,50 +281,60 @@ async def test_agent_nodes_cover_all_paths(monkeypatch: pytest.MonkeyPatch):
     state.research_parameters = generated_params
     plan_result = await agent._node_make_research_plan(state, RunnableConfig())
     state.research_plan = plan_result["research_plan"]
+
     normalized_plan = agent._node_edit_research_plan(state)
     assert normalized_plan["research_plan"] is plan_result["research_plan"]
 
-    prepared = agent._node_prepare_research(state)
-    assert len(prepared["messages"]) == 2
-    state.messages.extend(prepared["messages"])
-
-    monkeypatch.setattr(agent_module, "interrupt", lambda prompt: "y")
-    await agent._research_plan_human_judge(state, RunnableConfig())
-    assert state.research_plan_human_edit is True
-
-    monkeypatch.setattr(agent_module, "interrupt", lambda prompt: "n")
-    await agent._research_plan_human_judge(state, RunnableConfig())
-    assert state.research_plan_human_edit is False
-
-    monkeypatch.setattr(agent_module, "interrupt", lambda prompt: "maybe")
-    await agent._research_plan_human_judge(state, RunnableConfig())
-    assert state.research_plan_human_edit is False
+    assert agent._node_edit_research_plan(State(user_input="empty")) == {}
 
     class Wrapper:
         def model_dump(self):
             return plan_payload
 
-    assert agent._node_edit_research_plan(State(user_input="t")) == {}
-
     wrapped_state = State(user_input="t")
     wrapped_state.__dict__["research_plan"] = Wrapper()
-    wrapped = agent._node_edit_research_plan(wrapped_state)
-    assert isinstance(wrapped["research_plan"], GeneratedObjectSchema)
+    assert isinstance(
+        agent._node_edit_research_plan(wrapped_state)["research_plan"],
+        GeneratedObjectSchema,
+    )
 
     dict_state = State(user_input="t")
     dict_state.__dict__["research_plan"] = plan_payload
-    dict_based = agent._node_edit_research_plan(dict_state)
-    assert isinstance(dict_based["research_plan"], GeneratedObjectSchema)
-
-    state.messages.extend(
-        (await agent._node_deep_research(state, RunnableConfig()))["messages"]
+    assert isinstance(
+        agent._node_edit_research_plan(dict_state)["research_plan"],
+        GeneratedObjectSchema,
     )
-    assert agent._routing_should_continue(state) == "continue_react_loop"
 
-    state.messages.extend(
-        (await agent._node_deep_research(state, RunnableConfig()))["messages"]
+    responses = iter(["y", "n", "maybe"])
+    monkeypatch.setattr(agent_module, "interrupt", lambda _prompt: next(responses))
+
+    await agent._research_plan_human_judge(state, RunnableConfig())
+    assert state.research_plan_human_edit is True
+
+    await agent._research_plan_human_judge(state, RunnableConfig())
+    assert state.research_plan_human_edit is False
+
+    await agent._research_plan_human_judge(state, RunnableConfig())
+    assert state.research_plan_human_edit is False
+
+    deep_messages = await agent._node_deep_research(state, RunnableConfig())
+    assert dummy_deep_agent.calls[0]["messages"][0]["content"] == "topic"
+    state.messages.extend(deep_messages["messages"])
+
+    summary = agent._node_write_research_result(state)
+    report = summary.get("report") or ""
+    assert "fragment" in report and "tail" in report
+
+    simple_summary = agent._node_write_research_result(
+        State(
+            user_input="t",
+            messages=[types.SimpleNamespace(content="final")],
+        )
     )
-    assert agent._routing_should_continue(state) == "finish_research"
+    assert simple_summary["report"] == "final"
+
+    none_summary = agent._node_write_research_result(State(user_input="empty"))
+    assert none_summary["report"] is None
 
     assert (
         agent._routing_human_edit_judge(
@@ -326,21 +348,6 @@ async def test_agent_nodes_cover_all_paths(monkeypatch: pytest.MonkeyPatch):
         )
         == "search"
     )
-
-    summary = agent._node_write_research_result(state)
-    report = summary.get("report") or ""
-    assert "fragment" in report and "tail" in report
-
-    none_summary = agent._node_write_research_result(State(user_input="t"))
-    assert none_summary["report"] is None
-
-    simple_summary = agent._node_write_research_result(
-        State(
-            user_input="t",
-            messages=[types.SimpleNamespace(content="final")],
-        )
-    )
-    assert simple_summary["report"] == "final"
 
 
 def test_get_compiled_graph_uses_custom_serializer(monkeypatch: pytest.MonkeyPatch):
@@ -373,10 +380,6 @@ def test_get_compiled_graph_uses_custom_serializer(monkeypatch: pytest.MonkeyPat
             recorded["checkpointer"] = checkpointer
             return DummyCompiledGraph()
 
-    class DummyToolNode:
-        def __init__(self, tools):
-            recorded["tools"] = tuple(tools)
-
     class DummyMemorySaver:
         def __init__(self, serde):
             recorded["serde"] = serde
@@ -406,7 +409,6 @@ def test_get_compiled_graph_uses_custom_serializer(monkeypatch: pytest.MonkeyPat
     dummy_file = DummyFile()
 
     monkeypatch.setattr(agent_module, "StateGraph", DummyStateGraph)
-    monkeypatch.setattr(agent_module, "ToolNode", DummyToolNode)
     monkeypatch.setattr(agent_module, "MemorySaver", DummyMemorySaver)
     monkeypatch.setattr(builtins, "open", lambda path, mode: dummy_file)
 
@@ -415,6 +417,5 @@ def test_get_compiled_graph_uses_custom_serializer(monkeypatch: pytest.MonkeyPat
 
     assert isinstance(compiled, DummyCompiledGraph)
     assert recorded["state_cls"] is State
-    assert recorded["tools"] == ("web_tool", "reflect_tool")
     assert isinstance(recorded["serde"], NamespaceAwareJsonPlusSerializer)
     assert dummy_file.writes == [b"png"]
