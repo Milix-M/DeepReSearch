@@ -19,13 +19,14 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from langgraph.types import interrupt
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from langchain_tavily import TavilySearch
+
 
 from src.backend.ai.analyze.query_analyze import QueryAnalyzeAI, ResearchParameters
 from src.backend.ai.reflect.reflect_search_result import ReflectionResultSchema
 from src.backend.ai.schedule.plan_reserch import GeneratedObjectSchema, PlanResearchAI
 from src.backend.ai.search.prompt import DEEP_RESEARCH_SYSTEM_PROMPT
 from src.backend.tools.search_reflect import reflect_on_results
-from src.backend.tools.web_research import web_research
 
 
 class NamespaceAwareJsonPlusSerializer(JsonPlusSerializer):
@@ -130,11 +131,20 @@ class OSSDeepResearchAgent:
 
     def __init__(self) -> None:
         """エージェントを初期化する。"""
+        tavily_search = TavilySearch(
+            max_results=10, topic="general", include_answer=True
+        )
+
         # 使用するツール
-        self.tools = [web_research, reflect_on_results]
+        self.tools = [tavily_search, reflect_on_results]
 
         self.llm = ChatOpenAI(
             model="tngtech/deepseek-r1t2-chimera:free",
+            openai_api_key=getenv("OPENROUTER_API_KEY"),  # type: ignore[call-arg]
+            openai_api_base="https://openrouter.ai/api/v1",  # type: ignore[call-arg]
+        )
+        self.planner_llm = ChatOpenAI(
+            model="z-ai/glm-4.5-air:free",
             openai_api_key=getenv("OPENROUTER_API_KEY"),  # type: ignore[call-arg]
             openai_api_base="https://openrouter.ai/api/v1",  # type: ignore[call-arg]
         )
@@ -194,8 +204,9 @@ class OSSDeepResearchAgent:
         Returns:
             dict[str, GeneratedObjectSchema]: 研究計画を含む差分ステート。
         """
-        ai = PlanResearchAI(self.llm)
+        ai = PlanResearchAI(self.planner_llm)
         response = await ai(state.user_input)
+        print(response)
         return {"research_plan": response}
 
     async def _research_plan_human_judge(self, state: State, config: RunnableConfig):
@@ -302,7 +313,7 @@ class OSSDeepResearchAgent:
         formatted_plan = plan.model_dump()
         final_prompt_text = DEEP_RESEARCH_SYSTEM_PROMPT.format(
             SEARCH_QUERIES_PER_SECTION=params.search_queries_per_section,
-            SEARCH_API="DuckDuckGo",
+            SEARCH_API="Tavily",
             SEARCH_ITERATIONS=params.search_iterations,
             SEARCH_PLAN=formatted_plan,
             CURRENT_DATE=datetime.date.today(),

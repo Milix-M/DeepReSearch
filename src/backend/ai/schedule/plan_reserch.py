@@ -1,5 +1,8 @@
 from langchain_core.load.serializable import Serializable
 from pydantic import Field
+from langchain_tavily import TavilySearch
+from langchain.agents import create_agent
+
 
 from .prompt import SCHDULE_AI_SYSTEM_PROMPT
 
@@ -107,7 +110,14 @@ class PlanResearchAI:
         """
 
         self.llm = llm
-        self.structured_llm = llm.with_structured_output(GeneratedObjectSchema)
+        tavily_search = TavilySearch(max_results=10, topic="general")
+
+        self.planning_agent = create_agent(
+            model=self.llm,
+            tools=[tavily_search],
+            system_prompt=SCHDULE_AI_SYSTEM_PROMPT.format(query="{query}"),
+            response_format=GeneratedObjectSchema,
+        )
 
     async def __call__(self, query):
         """LLM を呼び出して研究計画を生成する。
@@ -123,6 +133,7 @@ class PlanResearchAI:
             >>> result = ai("Googleとは？")
         """
 
-        prompt = [("system", SCHDULE_AI_SYSTEM_PROMPT.format(query=query))]
-        response = await self.structured_llm.ainvoke(prompt)
-        return response
+        response = await self.planning_agent.ainvoke(
+            {"messages": [{"role": "user", "content": query}]}
+        )
+        return response["structured_response"]
