@@ -41,13 +41,13 @@ DeepReSearch は、LangGraph と LangChain を用いて多段階のウェブリ�
 ### テストの実行
 
 ```bash
-python -m pytest
+pytest
 ```
 
 カバレッジと視覚的なレポートが必要な場合は次のように実行します。
 
 ```bash
-python -m pytest --cov=src/backend --cov-report=term-missing --cov-report=html
+pytest --cov=src/backend --cov-report=term-missing --cov-report=html
 ```
 
 HTML レポートは `htmlcov/index.html` に生成され、ブラウザや VS Code の Live Preview で確認できます。
