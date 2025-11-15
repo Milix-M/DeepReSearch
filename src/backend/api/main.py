@@ -22,14 +22,13 @@ _DEFAULT_ALLOWED_ORIGINS = {
     "http://127.0.0.1:3000",
 }
 
-# Uvicorn の標準エラーロガー配下にぶら下げて、Docker コンソールへ確実に流す。
 logger = logging.getLogger("uvicorn.error").getChild("deep_research.api")
 logger.setLevel(logging.INFO)
 logger.propagate = True
 
 
 def _resolve_allowed_origins() -> list[str]:
-    """CORS許可オリジンを環境変数から解決する。
+    """CORSを許可するオリジンを環境変数から設定する。
 
     Returns:
         list[str]: 許可するオリジンのリスト。環境変数が未設定の場合はデフォルト値を返す。
