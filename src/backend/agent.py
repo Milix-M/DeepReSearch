@@ -9,6 +9,7 @@ from langchain_core.load.load import DEFAULT_NAMESPACES, Reviver
 from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 
+
 if "src" not in DEFAULT_NAMESPACES:
     DEFAULT_NAMESPACES.append("src")
 from langchain.agents import create_agent
@@ -20,6 +21,7 @@ from langgraph.graph.message import add_messages
 from langgraph.types import interrupt
 from pydantic import BaseModel, Field, model_validator
 
+from backend.ai.search.schema import ResearchReport
 from src.backend.ai.analyze.query_analyze import QueryAnalyzeAI, ResearchParameters
 from src.backend.ai.reflect.reflect_search_result import ReflectionResultSchema
 from src.backend.ai.schedule.plan_reserch import GeneratedObjectSchema, PlanResearchAI
@@ -261,6 +263,7 @@ class OSSDeepResearchAgent:
             model=self.tool_callable_llm,
             tools=self.tools,
             system_prompt=formatted_system_prompt,
+            response_format=ResearchReport,
         )
 
         response = await deepresearch_agent.ainvoke(
